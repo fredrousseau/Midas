@@ -215,7 +215,7 @@ registerRoutes({
 	dataProvider: dataProvider,
 	marketDataService: marketDataService,
 	indicatorService: indicatorService,
-	markerAnalysisService: marketAnalysisService,
+	marketAnalysisService: marketAnalysisService,
 	isSecuredServer: isSecuredServer
 });
 

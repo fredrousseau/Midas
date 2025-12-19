@@ -61,8 +61,8 @@ export function registerRoutes(parameters) {
 	const marketDataService = parameters.marketDataService || null;
 	if (!marketDataService) throw new Error('registerTradingRoutes requires a marketDataService instance in options');
 
-	const markerAnalysisService = parameters.markerAnalysisService || null;
-	if (!markerAnalysisService) throw new Error('registerTradingRoutes requires a markerAnalysisService instance in options');
+	const marketAnalysisService = parameters.marketAnalysisService || null;
+	if (!marketAnalysisService) throw new Error('registerTradingRoutes requires a markerAnalysisService instance in options');
 
 	const logger = parameters.logger || null;
 	if (!logger) throw new Error('registerTradingRoutes requires a logger instance in options');
@@ -257,7 +257,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await markerAnalysisService.detectRegime({ symbol, timeframe, count });
+			return await marketAnalysisService.detectRegime({ symbol, timeframe, count });
 		})
 	);
 
@@ -284,7 +284,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await markerAnalysisService.generateEnrichedContext({
+			return await marketAnalysisService.generateEnrichedContext({
 				symbol,
 				timeframes: tfArray,
 				count: barCount,
@@ -312,7 +312,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await markerAnalysisService.quickMultiTimeframeCheck({
+			return await marketAnalysisService.quickMultiTimeframeCheck({
 				symbol,
 				timeframes: tfArray,
 			});
