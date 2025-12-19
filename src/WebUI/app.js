@@ -236,11 +236,12 @@ function resizeCharts() {
 
 // Authenticated fetch wrapper
 async function authenticatedFetch(url, options = {}) {
-    if (authClient) {
+    // Only use authClient if it exists AND user is authenticated
+    if (authClient && authClient.isAuthenticated()) {
         return authClient.authenticatedFetch(url, options);
     }
 
-    // Fallback for when auth is not enabled
+    // Fallback for when auth is not enabled or user not authenticated
     return fetch(url, options);
 }
 
