@@ -1,43 +1,123 @@
 /**
- * Trading API Routes
- * REST API endpoints for trading services - Simplified version
+ * MCP & API Routes
  */
 
 import { asyncHandler, parseTradingParams, errorHandler } from './Utils/helpers.js';
 import { getTimezone } from './Utils/timezone.js';
+import rateLimit from 'express-rate-limit';
+
+// Helper to create rate limiters with consistent logging
+function makeLimiter({ logger: logger, windowMs = 15 * 60 * 1000, max = 100 } = {}) {
+	return rateLimit({
+		windowMs,
+		max,
+		standardHeaders: true,
+		legacyHeaders: false,
+		handler: (req, res) => {
+			logger.info(`Rate limit exceeded for IP: ${req.ip} on ${req.path}`);
+			res.status(429).json({ error: 'too_many_requests' });
+		},
+	});
+}
+
+// Auth Middleware Factory - Returns a middleware that verifies JWT Token
+// If SECURED_SERVER is disabled, middleware will bypass authentication.
+function createAuthMiddleware(oauthService, isSecuredServer) {
+	return function authMiddleware(req, res, next) {
+		if (!isSecuredServer) return next();
+
+		const { authorization: authHeader } = req.headers;
+		if (!authHeader || !authHeader.startsWith('Bearer ')) {
+			return res.status(401).json({ error: 'Missing or invalid authorization header' });
+		}
+
+		const token = authHeader.slice(7).trim();
+		if (!token) return res.status(401).json({ error: 'Token cannot be empty' });
+
+		const validation = oauthService.validateToken(token);
+		if (!validation.valid) {
+			return res.status(401).json({ error: 'Invalid or expired token' });
+		}
+
+		req.user = { id: validation.payload.sub, scope: validation.payload.scope };
+		next();
+	};
+}
 
 /**
  * Register all trading routes
  * @param {Express} app - Express application
- * @param {TradingService} tradingService - Trading service instance
  * @param {Object} logger - Logger instance
+ 
  */
-export function registerTradingRoutes(options) {
-	const app = options.app || null;
+
+export function registerRoutes(parameters) {
+	const app = parameters.app || null;
 	if (!app) throw new Error('registerTradingRoutes requires an app instance in options');
 
-	const dataProvider = options.dataProvider || null;
+	const dataProvider = parameters.dataProvider || null;
 	if (!dataProvider) throw new Error('registerTradingRoutes requires a dataProvider class in options');
 
-	const indicatorService = options.indicatorService || null;
+	const indicatorService = parameters.indicatorService || null;
 	if (!indicatorService) throw new Error('registerTradingRoutes requires an indicatorService instance in options');
 
-	const marketDataService = options.marketDataService || null;
+	const marketDataService = parameters.marketDataService || null;
 	if (!marketDataService) throw new Error('registerTradingRoutes requires a marketDataService instance in options');
 
-	const markerAnalysisService = options.markerAnalysisService || null;
+	const markerAnalysisService = parameters.markerAnalysisService || null;
 	if (!markerAnalysisService) throw new Error('registerTradingRoutes requires a markerAnalysisService instance in options');
 
-	const logger = options.logger || null;
+	const logger = parameters.logger || null;
 	if (!logger) throw new Error('registerTradingRoutes requires a logger instance in options');
 
-	// ========== MARKET DATA ==========
+	const oauthService = parameters.oauthService || null;
+	if (!oauthService) throw new Error('registerTradingRoutes requires an oauthService instance in options');
+
+	const mcpService = parameters.mcpService || null;
+	if (!mcpService) throw new Error('registerTradingRoutes requires a mcpService instance in options');
+
+	const isSecuredServer = parameters.isSecuredServer !== undefined ? parameters.isSecuredServer : true;
+
+	const rateLimiter = makeLimiter({ logger, max: 100 });
+	const authMiddleware = createAuthMiddleware(oauthService, isSecuredServer);
+
+	// ========== Channel : OAUTH / Type : Authentication ==========
+
+	const oauthRoutes = oauthService.getRoutes();
+
+	oauthRoutes.forEach((route) => {
+		const middleware = [];
+		middleware.push(rateLimiter);
+		middleware.push(route.handler.bind(oauthService));
+		app[route.method](route.path, ...middleware);
+		app[route.method](route.path, ...middleware);
+		/*
+		if (route.path === '/oauth/token') middleware.push(tokenLimiter);
+		else if (route.path.startsWith('/oauth/')) middleware.push(oauthLimiter);
+		*/
+	});
+
+	// ========== Channel : MCP / Type : Inventory / Global Handlder ==========
+
+	// Mcp Tools List Endpoint - Return tools with properly formatted schemas
+	app.get('/mcp/tools', (req, res) => {
+		logger.info('GET /mcp/tools - Returning registered tools');
+		return { tools: mcpService.getTools() };
+	});
+
+	// Mcp Server Handler - POST only
+	app.post('/mcp', authMiddleware, async (req, res) => {
+		// Delegate handling to the McpService which manages transports and sessions
+		await mcpService.handleRequest(req, res);
+	});
+
+	// ========== Channel : API / Type : MARKET DATA ==========
 
 	app.get(
-		'/api/price/:symbol',
+		'/api/v1/price/:symbol',
 		asyncHandler(async (req) => {
 			const { symbol } = req.params;
-			logger.info(`GET /api/price/${symbol} - Fetching current price`);
+			logger.info(`GET /api/v1/price/${symbol} - Fetching current price`);
 
 			const price = await marketDataService.getPrice(symbol);
 			return {
@@ -49,9 +129,9 @@ export function registerTradingRoutes(options) {
 	);
 
 	app.get(
-		'/api/ohlcv',
+		'/api/v1/ohlcv',
 		asyncHandler(async (req) => {
-			logger.info('GET /api/ohlcv - Fetching OHLCV');
+			logger.info('GET /api/v1/ohlcv - Fetching OHLCV');
 			const { symbol, timeframe, count, from, to } = parseTradingParams(req.query);
 
 			if (!symbol) {
@@ -65,32 +145,32 @@ export function registerTradingRoutes(options) {
 	);
 
 	app.get(
-		'/api/pairs',
+		'/api/v1/pairs',
 		asyncHandler(async (req) => {
 			const { quoteAsset, baseAsset, status } = req.query;
-			logger.info('GET /api/pairs - Fetching available trading pairs');
+			logger.info('GET /api/v1/pairs - Fetching available trading pairs');
 
 			const pairs = await marketDataService.getPairs({ quoteAsset, baseAsset, status });
 			return { count: pairs.length, pairs };
 		})
 	);
 
-	// ========== INDICATORS ==========
+	// ========== Channel : API / Type : INDICATORS ==========
 
 	app.get(
-		'/api/catalog',
+		'/api/v1/catalog',
 		asyncHandler(async (req) => {
-			logger.info('GET /api/catalog - Fetching trading indicator catalog');
+			logger.info('GET /api/v1/catalog - Fetching trading indicator catalog');
 			const { category } = req.query;
 			return indicatorService.getCatalog(category);
 		})
 	);
 
 	app.get(
-		'/api/indicator/:name',
+		'/api/v1/indicator/:name',
 		asyncHandler(async (req) => {
 			const { name } = req.params;
-			logger.info(`GET /api/indicator/${name} - Fetching indicator metadata`);
+			logger.info(`GET /api/v1/indicator/${name} - Fetching indicator metadata`);
 
 			const metadata = indicatorService.getIndicatorMetadata(name);
 			if (!metadata) {
@@ -103,13 +183,13 @@ export function registerTradingRoutes(options) {
 	);
 
 	app.get(
-		'/api/indicators/:indicator',
+		'/api/v1/indicators/:indicator',
 		asyncHandler(async (req) => {
 			const { indicator } = req.params;
 			const { symbol, config } = req.query;
 			const { timeframe, bars } = parseTradingParams(req.query);
 
-			logger.info(`GET /api/indicators/${indicator} - Getting time series for ${symbol}`);
+			logger.info(`GET /api/v1/indicators/${indicator} - Getting time series for ${symbol}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -127,12 +207,12 @@ export function registerTradingRoutes(options) {
 		})
 	);
 
-	// ========== REGIME DETECTION ==========
+	// ========== Channel : API / Type : REGIME DETECTION ==========
 
 	app.get(
-		'/api/regime',
+		'/api/v1/regime',
 		asyncHandler(async (req) => {
-			logger.info('GET /api/regime - Detecting market regime');
+			logger.info('GET /api/v1/regime - Detecting market regime');
 			const { symbol, timeframe, count } = parseTradingParams(req.query);
 
 			if (!symbol) {
@@ -145,14 +225,12 @@ export function registerTradingRoutes(options) {
 		})
 	);
 
-
-
-	// ========== STATISTICAL CONTEXT (UNIFIED) ==========
+	// ========== Channel : API / Type : STATISTICAL CONTEXT (UNIFIED) ==========
 
 	app.get(
-		'/api/context/enriched',
+		'/api/v1/context/enriched',
 		asyncHandler(async (req) => {
-			logger.info('GET /api/context/enriched - Unified enriched context');
+			logger.info('GET /api/v1/context/enriched - Unified enriched context');
 			const { symbol, timeframes, count } = req.query;
 
 			if (!symbol) {
@@ -179,9 +257,9 @@ export function registerTradingRoutes(options) {
 	);
 
 	app.get(
-		'/api/context/mtf-quick',
+		'/api/v1/context/mtf-quick',
 		asyncHandler(async (req) => {
-			logger.info('GET /api/context/mtf-quick - Quick multi-timeframe check');
+			logger.info('GET /api/v1/context/mtf-quick - Quick multi-timeframe check');
 			const { symbol, timeframes } = req.query;
 
 			if (!symbol) {
@@ -204,32 +282,41 @@ export function registerTradingRoutes(options) {
 			});
 		})
 	);
-	// ========== UTILITY ==========
+	// ========== Channel : API / Type : UTILITY ==========
 
 	app.get(
-		'/api/config',
+		'/api/v1/config',
 		asyncHandler(() => {
-			logger.info('GET /api/config - Getting client configuration');
+			logger.info('GET /api/v1/config - Getting client configuration');
 			return {
 				timezone: getTimezone(),
 			};
 		})
 	);
-	// ========== CACHE MANAGEMENT ==========
+
+	//	Handler - API health/status endpoint
+	app.get(
+		'/api/v1/status',
+		asyncHandler(() => {
+			return { status: 'ok' };
+		})
+	);
+
+	// ========== Channel : API / Type : CACHE MANAGEMENT ==========
 
 	app.get(
-		'/api/cache/stats',
+		'/api/v1/cache/stats',
 		asyncHandler(() => {
-			logger.info('GET /api/cache/stats - Getting cache statistics');
+			logger.info('GET /api/v1/cache/stats - Getting cache statistics');
 			return dataProvider.getCacheStats();
 		})
 	);
 
 	app.delete(
-		'/api/cache',
+		'/api/v1/cache',
 		asyncHandler((req) => {
 			const { symbol, timeframe } = req.query;
-			logger.info(`DELETE /api/cache - Clearing cache for ${symbol || 'all'}:${timeframe || 'all'}`);
+			logger.info(`DELETE /api/v1/cache - Clearing cache for ${symbol || 'all'}:${timeframe || 'all'}`);
 			const cleared = dataProvider.clearCache({ symbol, timeframe });
 			return {
 				success: true,
@@ -240,9 +327,9 @@ export function registerTradingRoutes(options) {
 	);
 
 	// Error handler middleware (must be last)
-	app.use('/api', errorHandler(logger));
+	app.use('/api/v1', errorHandler(logger));
 
 	logger.info('Trading API routes registered successfully');
 }
 
-export default registerTradingRoutes;
+export default registerRoutes;
