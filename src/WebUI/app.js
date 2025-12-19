@@ -11,6 +11,9 @@ let catalogData = null;
 let indicatorDescriptions = new Map(); // Map indicator key to description
 let appTimezone = 'Europe/Paris'; // Default, will be loaded from API
 
+// Import auth client (will be loaded via script tag)
+let authClient = null;
+
 // Utility functions
 function showStatus(message, type = 'loading') {
     const statusEl = document.getElementById('status');
@@ -231,9 +234,19 @@ function resizeCharts() {
     console.log('=== resizeCharts() complete ===');
 }
 
+// Authenticated fetch wrapper
+async function authenticatedFetch(url, options = {}) {
+    if (authClient) {
+        return authClient.authenticatedFetch(url, options);
+    }
+
+    // Fallback for when auth is not enabled
+    return fetch(url, options);
+}
+
 // API calls
 async function fetchConfig() {
-    const response = await fetch(`${API_BASE}/api/v1/config`);
+    const response = await authenticatedFetch(`${API_BASE}/api/v1/config`);
     if (!response.ok)
         throw new Error('Failed to fetch config');
 
@@ -242,7 +255,7 @@ async function fetchConfig() {
 }
 
 async function fetchCatalog() {
-    const response = await fetch(`${API_BASE}/api/v1/catalog`);
+    const response = await authenticatedFetch(`${API_BASE}/api/v1/catalog`);
     if (!response.ok)
         throw new Error('Failed to fetch catalog');
 
@@ -251,7 +264,7 @@ async function fetchCatalog() {
 }
 
 async function fetchOHLCV(symbol, timeframe, bars) {
-    const response = await fetch(`${API_BASE}/api/v1/ohlcv?symbol=${symbol}&timeframe=${timeframe}&count=${bars}`);
+    const response = await authenticatedFetch(`${API_BASE}/api/v1/ohlcv?symbol=${symbol}&timeframe=${timeframe}&count=${bars}`);
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || 'Failed to fetch OHLCV data');
@@ -263,7 +276,7 @@ async function fetchOHLCV(symbol, timeframe, bars) {
 
 async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}) {
     const configParam = encodeURIComponent(JSON.stringify(config));
-    const response = await fetch(`${API_BASE}/api/v1/indicators/${indicator}?symbol=${symbol}&timeframe=${timeframe}&bars=${bars}&config=${configParam}`);
+    const response = await authenticatedFetch(`${API_BASE}/api/v1/indicators/${indicator}?symbol=${symbol}&timeframe=${timeframe}&bars=${bars}&config=${configParam}`);
     if (!response.ok) {
         const error = await response.json();
         throw new Error(error.error || `Failed to fetch ${indicator} indicator`);
@@ -662,6 +675,19 @@ document.getElementById('symbol').addEventListener('keypress', (e) => {
 async function tryInitCharts() {
     if (typeof LightweightCharts !== 'undefined' && window.lightweightChartsLoaded) {
         try {
+            // Initialize auth client if available
+            if (window.authClient) {
+                authClient = window.authClient;
+
+                // Check if authenticated, redirect to login if not
+                if (!authClient.isAuthenticated()) {
+                    window.location.href = '/login.html';
+                    return;
+                }
+
+                console.log('Auth client initialized and user authenticated');
+            }
+
             // Load configuration first
             const config = await fetchConfig();
             if (config.timezone) {

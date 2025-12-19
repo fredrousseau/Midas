@@ -70,6 +70,9 @@ export function registerRoutes(parameters) {
 	const oauthService = parameters.oauthService || null;
 	if (!oauthService) throw new Error('registerTradingRoutes requires an oauthService instance in options');
 
+	const webUIAuthService = parameters.webUIAuthService || null;
+	if (!webUIAuthService) throw new Error('registerTradingRoutes requires a webUIAuthService instance in options');
+
 	const mcpService = parameters.mcpService || null;
 	if (!mcpService) throw new Error('registerTradingRoutes requires a mcpService instance in options');
 
@@ -92,12 +95,41 @@ export function registerRoutes(parameters) {
 		*/
 	});
 
+	// ========== Channel : WEBUI / Type : Authentication ==========
+
+	const webUIAuthRoutes = webUIAuthService.getRoutes();
+
+	webUIAuthRoutes.forEach((route) => {
+		const middleware = [];
+		middleware.push(rateLimiter);
+		middleware.push(route.handler);
+		app[route.method](route.path, ...middleware);
+		logger.info(`Registered WebUI auth route: ${route.method.toUpperCase()} ${route.path}`);
+	});
+
 	// ========== Apply auth middleware to all subsequent routes (only if server is secured) ==========
 
 	if (isSecuredServer) {
 		const authMiddleware = createAuthMiddleware(oauthService);
-		app.use(authMiddleware);
-		logger.info('Authentication middleware enabled for all routes except OAuth');
+
+		// Apply auth middleware to API routes only, not WebUI static files
+		app.use((req, res, next) => {
+			// Skip authentication for WebUI public paths (login.html and auth-client.js)
+			const publicPaths = ['/login.html', '/auth-client.js'];
+			if (publicPaths.includes(req.path)) {
+				return next();
+			}
+
+			// Skip authentication for non-API paths (static files will be handled by WebUI middleware)
+			if (!req.path.startsWith('/api/') && !req.path.startsWith('/mcp')) {
+				return next();
+			}
+
+			// Apply authentication for API routes
+			return authMiddleware(req, res, next);
+		});
+
+		logger.info('Authentication middleware enabled for API routes');
 	} else {
 		logger.info('Authentication middleware disabled (SECURED_SERVER=false)');
 	}

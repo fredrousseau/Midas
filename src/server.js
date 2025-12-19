@@ -21,7 +21,8 @@ import cors from 'cors';
 
 import { logger } from './Logger/LoggerService.js';
 
-import { OAuthService } from './Mcp/OAuthService.js';
+import { OAuthService } from './OAuth/OAuthService.js';
+import { WebUIAuthService } from './OAuth/WebUIAuthService.js';
 import { McpService } from './Mcp/McpService.js';
 
 import { registerRoutes } from './routes.js';
@@ -104,6 +105,16 @@ app.use((req, res, next) => {
  */
 const oauthService = new OAuthService({
 	logger: logger
+});
+
+/**
+ * WebUI Authentication Service
+ * Handles simple username/password authentication for WebUI access
+ * @type {WebUIAuthService}
+ */
+const webUIAuthService = new WebUIAuthService({
+	logger: logger,
+	oauthService: oauthService
 });
 
 /**
@@ -198,6 +209,7 @@ await mcpService.registerAllModules({
 registerRoutes({
 	app: app,
 	oauthService: oauthService,
+	webUIAuthService: webUIAuthService,
 	mcpService: mcpService,
 	logger: logger,
 	dataProvider: dataProvider,
@@ -214,8 +226,17 @@ registerRoutes({
 /**
  * Serve static files for the Web UI
  * Note: This is placed AFTER API routes so API routes take precedence
+ * Authentication is handled client-side in app.js which redirects to login if not authenticated
  */
-app.use(express.static('src/WebUI'));
+if (isSecuredServer) {
+	// Serve all static files without server-side authentication
+	// Client-side JavaScript (app.js) will check authentication and redirect if needed
+	app.use(express.static('src/WebUI'));
+	logger.info('WebUI static files served (client-side authentication enabled)');
+} else {
+	app.use(express.static('src/WebUI'));
+	logger.warn('WebUI served WITHOUT authentication (SECURED_SERVER=false)');
+}
 
 /**
  * 404 Error Handler
