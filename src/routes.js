@@ -106,55 +106,58 @@ export function registerRoutes(parameters) {
 		app[route.method](route.path, ...middleware);
 	});
 
-	// ========== Apply auth middleware to all subsequent routes (only if server is secured) ==========
+	// ========== Apply auth middleware ==========
 
-	if (isSecuredServer) {
-		const authMiddleware = createAuthMiddleware(oauthService);
+	const authMiddleware = createAuthMiddleware(oauthService);
 
-		// Apply auth middleware to API routes AND WebUI static files
-		app.use((req, res, next) => {
-			// Public paths that don't require authentication
-			const publicPaths = ['/login.html', '/auth-client.js'];
-			if (publicPaths.includes(req.path)) {
-				return next();
-			}
+	// Apply auth middleware to API routes AND WebUI static files
+	app.use((req, res, next) => {
+		// Public paths that don't require authentication
+		const publicPaths = ['/login.html', '/auth-client.js'];
+		if (publicPaths.includes(req.path)) {
+			return next();
+		}
 
-			// API routes and MCP - require Bearer token in Authorization header
-			if (req.path.startsWith('/api/') || req.path.startsWith('/mcp')) {
+		// API routes and MCP - require Bearer token in Authorization header (only if server is secured)
+		if (req.path.startsWith('/api/') || req.path.startsWith('/mcp')) {
+			if (isSecuredServer) {
 				return authMiddleware(req, res, next);
 			}
+			return next();
+		}
 
-			// WebUI static HTML files - check for valid token in HTTP-only cookie
-			// This prevents client-side authentication bypass
-			if (req.path.endsWith('.html') || req.path === '/' || req.path === '/index.html') {
-				const token = req.cookies.webui_auth_token;
+		// WebUI static HTML files - ALWAYS check for valid token in HTTP-only cookie
+		// This prevents client-side authentication bypass
+		if (req.path.endsWith('.html') || req.path === '/' || req.path === '/index.html') {
+			const token = req.cookies.webui_auth_token;
 
-				// If no cookie or invalid token, redirect to login
-				if (!token) {
-					return res.redirect('/login.html');
-				}
-
-				const validation = oauthService.validateToken(token);
-
-				if (!validation.valid) {
-					// Clear invalid cookie and redirect to login
-					res.clearCookie('webui_auth_token');
-					return res.redirect('/login.html');
-				}
-
-				// Token is valid, allow access
-				req.user = { id: validation.payload.sub, scope: validation.payload.scope };
-				return next();
+			// If no cookie or invalid token, redirect to login
+			if (!token) {
+				return res.redirect('/login.html');
 			}
 
-			// For other static files (JS, CSS, etc), allow access
-			// These will be blocked by browser if the HTML page couldn't load
-			return next();
-		});
+			const validation = oauthService.validateToken(token);
 
+			if (!validation.valid) {
+				// Clear invalid cookie and redirect to login
+				res.clearCookie('webui_auth_token');
+				return res.redirect('/login.html');
+			}
+
+			// Token is valid, allow access
+			req.user = { id: validation.payload.sub, scope: validation.payload.scope };
+			return next();
+		}
+
+		// For other static files (JS, CSS, etc), allow access
+		// These will be blocked by browser if the HTML page couldn't load
+		return next();
+	});
+
+	if (isSecuredServer) {
 		logger.info('Authentication middleware enabled for API routes and WebUI (server-side)');
 	} else {
-		logger.info('Authentication middleware disabled (SECURED_SERVER=false)');
+		logger.info('Authentication middleware enabled for WebUI only (SECURED_SERVER=false)');
 	}
 
 	// ========== Channel : MCP / Type : Inventory / Global Handlder ==========
