@@ -59,6 +59,15 @@ const app = express();
 // ============================================================================
 
 /**
+ * Trust Proxy Configuration
+ * Enable this if the app is behind a reverse proxy (nginx, Apache, load balancer, etc.)
+ * This allows Express to correctly identify client IPs from X-Forwarded-For headers
+ * @env TRUST_PROXY - Trust proxy setting (default: 'loopback')
+ * Values: true (trust all), false (trust none), 'loopback' (trust localhost), or specific IP/CIDR
+ */
+app.set('trust proxy', process.env.TRUST_PROXY || 'loopback');
+
+/**
  * CORS Configuration
  * Allows cross-origin requests with credentials
  * @env CORS_ORIGIN - Allowed origin for CORS (default: '*')
@@ -106,7 +115,8 @@ app.use((req, res, next) => {
  * @type {OAuthService}
  */
 const oauthService = new OAuthService({
-	logger: logger
+	logger: logger,
+	isSecuredServer: isSecuredServer
 });
 
 /**
@@ -233,7 +243,6 @@ registerRoutes({
  */
 app.use(express.static('src/WebUI'));
 
-
 /**
  * Global error handler middleware
  * Catches all errors from any route and provides consistent error responses
@@ -250,16 +259,14 @@ app.use((err, req, res, next) => {
 	};
 
 	// Determine log level based on error type
-	if (err.statusCode && err.statusCode < 500) {
+	if (err.statusCode && err.statusCode < 500) 
 		logger.warn('Client error occurred', errorContext);
-	} else {
+	 else 
 		logger.error('Server error occurred', errorContext);
-	}
 
 	// Don't send response if headers already sent
-	if (res.headersSent) {
+	if (res.headersSent) 
 		return next(err);
-	}
 
 	// Determine status code
 	const statusCode = err.statusCode || err.status || 500;
@@ -274,9 +281,8 @@ app.use((err, req, res, next) => {
 	};
 
 	// Include stack trace in development mode only
-	if (process.env.NODE_ENV === 'development') {
+	if (process.env.NODE_ENV === 'development') 
 		errorResponse.error.stack = err.stack;
-	}
 
 	// Send error response
 	res.status(statusCode).json(errorResponse);
