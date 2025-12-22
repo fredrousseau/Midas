@@ -185,10 +185,17 @@ export class RegimeDetectionService {
 			if (!series?.data || series.data.length === 0)
 				throw new Error('No ADX data returned');
 
-			// Extract ADX values and DI values
+			// Extract ADX values
 			const adx = series.data.map((d) => d.value || d.adx || 0);
-			const plusDI = series.data.map((d) => d.plusDI || d.plus_di || 0);
-			const minusDI = series.data.map((d) => d.minusDI || d.minus_di || 0);
+
+			// trading-signals ADX doesn't return plusDI/minusDI, so calculate them separately
+			const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars });
+			const { plusDI, minusDI } = this._calculateDI(
+				ohlcv.bars.map((b) => b.high),
+				ohlcv.bars.map((b) => b.low),
+				ohlcv.bars.map((b) => b.close),
+				config.adxPeriod
+			);
 
 			return { adx, plusDI, minusDI };
 		} catch (error) {
@@ -208,6 +215,44 @@ export class RegimeDetectionService {
 		const closes = ohlcv.bars.map((b) => b.close);
 
 		return calculateADX(highs, lows, closes, config.adxPeriod);
+	}
+
+	/**
+	 * Calculate Directional Indicators (plusDI and minusDI) only
+	 * @private
+	 */
+	_calculateDI(highs, lows, closes, period) {
+		const len = highs.length;
+
+		const dmPlus = [];
+		const dmMinus = [];
+		for (let i = 1; i < len; i++) {
+			const up = highs[i] - highs[i - 1];
+			const down = lows[i - 1] - lows[i];
+
+			dmPlus.push(up > down && up > 0 ? up : 0);
+			dmMinus.push(down > up && down > 0 ? down : 0);
+		}
+
+		const tr = calculateTrueRange(highs, lows, closes).slice(1);
+
+		const smTR = rma(tr, period);
+		const smDMp = rma(dmPlus, period);
+		const smDMm = rma(dmMinus, period);
+
+		const plusDI = [];
+		const minusDI = [];
+
+		for (let i = 0; i < smTR.length; i++) {
+			const atr = smTR[i];
+			const p = atr === 0 ? 0 : (smDMp[i] / atr) * 100;
+			const m = atr === 0 ? 0 : (smDMm[i] / atr) * 100;
+
+			plusDI.push(p);
+			minusDI.push(m);
+		}
+
+		return { plusDI, minusDI };
 	}
 
 	/**

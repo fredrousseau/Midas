@@ -1,7 +1,9 @@
 /**
- * Moving Averages Enricher 
- * Uses EXISTING indicator calculations from TradingService
+ * Moving Averages Enricher
+ * Uses EXISTING indicator calculations from indicatorService
  * No custom EMA/SMA calculations - 100% reuses existing system
+ *
+ * HARMONIZED with other enrichers (MomentumEnricher, VolatilityEnricher, VolumeEnricher)
  */
 
 import { round } from '#utils/statisticalHelpers.js';
@@ -15,49 +17,53 @@ export class MovingAveragesEnricher {
 
 	/**
 	 * Enrich moving averages with detailed analysis
-	 * USES EXISTING CALCULATIONS from TradingService
+	 * USES EXISTING CALCULATIONS from indicatorService (like all other enrichers)
+	 *
+	 * @param {Object} ohlcvData - OHLCV bars data (for consistency with other enrichers)
+	 * @param {Object} indicatorService - Indicator service to fetch calculations
+	 * @param {string} symbol - Symbol to analyze
+	 * @param {string} timeframe - Timeframe to analyze
+	 * @param {number} currentPrice - Current price
 	 */
-	async enrich({ tradingService, symbol, timeframe, currentPrice }) {
-		// ✅ Get EMAs from EXISTING calculations
+	async enrich({ _ohlcvData, indicatorService, symbol, timeframe, currentPrice }) {
+		// ✅ Get EMAs from EXISTING calculations via indicatorService
 		const emas = {};
-		for (const period of this.emaPeriods) 
+		for (const period of this.emaPeriods)
 			try {
-				const series = await tradingService.getIndicatorTimeSeries({
+				const series = await indicatorService.getIndicatorTimeSeries({
 					symbol,
 					indicator: 'ema',
 					timeframe,
 					bars: 250, // Extra for EMA200
-					config: { period }
+					config: { period },
 				});
-				
-				if (series && series.data && series.data.length > 0) 
+
+				if (series && series.data && series.data.length > 0)
 					emas[period] = {
 						current: series.data[series.data.length - 1].value,
-						history: series.data.map(d => d.value)
+						history: series.data.map((d) => d.value),
 					};
-				
 			} catch (error) {
 				this.logger.warn(`Failed to get EMA${period}: ${error.message}`);
 			}
 
-		// ✅ Get SMAs from EXISTING calculations
+		// ✅ Get SMAs from EXISTING calculations via indicatorService
 		const smas = {};
-		for (const period of this.smaPeriods) 
+		for (const period of this.smaPeriods)
 			try {
-				const series = await tradingService.getIndicatorTimeSeries({
+				const series = await indicatorService.getIndicatorTimeSeries({
 					symbol,
 					indicator: 'sma',
 					timeframe,
 					bars: 200,
-					config: { period }
+					config: { period },
 				});
-				
-				if (series && series.data && series.data.length > 0) 
+
+				if (series && series.data && series.data.length > 0)
 					smas[period] = {
 						current: series.data[series.data.length - 1].value,
-						history: series.data.map(d => d.value)
+						history: series.data.map((d) => d.value),
 					};
-				
 			} catch (error) {
 				this.logger.warn(`Failed to get SMA${period}: ${error.message}`);
 			}
@@ -78,8 +84,8 @@ export class MovingAveragesEnricher {
 				price_vs_ema200: emas[200] ? this._formatPercentage(currentPrice, emas[200].current) : null,
 
 				// Crosses
-				cross_12_26: (emas[12] && emas[26]) ? this._detectCross(emas[12].history, emas[26].history, 'EMA12/EMA26') : null,
-				cross_50_200: (emas[50] && emas[200]) ? this._detectCross(emas[50].history, emas[200].history, 'EMA50/EMA200') : null,
+				cross_12_26: emas[12] && emas[26] ? this._detectCross(emas[12].history, emas[26].history, 'EMA12/EMA26') : null,
+				cross_50_200: emas[50] && emas[200] ? this._detectCross(emas[50].history, emas[200].history, 'EMA50/EMA200') : null,
 
 				// Slopes
 				slope_ema12: emas[12] ? this._calculateSlope(emas[12].history, 10) : null,
@@ -87,21 +93,20 @@ export class MovingAveragesEnricher {
 				slope_ema50: emas[50] ? this._calculateSlope(emas[50].history, 20) : null,
 
 				// Divergence
-				divergence: (emas[12] && emas[26] && emas[50]) ? 
-					this._analyzeDivergence(emas[12].history, emas[26].history, emas[50].history) : null,
+				divergence: emas[12] && emas[26] && emas[50] ? this._analyzeDivergence(emas[12].history, emas[26].history, emas[50].history) : null,
 
 				// Alignment
 				alignment: this._analyzeAlignment(emas, currentPrice),
 
 				// Support/Resistance
 				support_cluster: this._identifySupportCluster(emas, currentPrice),
-				nearest_support: this._identifyNearestSupport(emas, currentPrice)
+				nearest_support: this._identifyNearestSupport(emas, currentPrice),
 			},
 			sma: {
 				sma20: smas[20]?.current ? round(smas[20].current, 0) : null,
 				sma50: smas[50]?.current ? round(smas[50].current, 0) : null,
-				vs_ema: (smas[20] && emas[26]) ? this._compareSMAvsEMA(smas, emas) : null
-			}
+				vs_ema: smas[20] && emas[26] ? this._compareSMAvsEMA(smas, emas) : null,
+			},
 		};
 	}
 
@@ -126,13 +131,9 @@ export class MovingAveragesEnricher {
 		const previousFast = fast[fast.length - 2];
 		const previousSlow = slow[slow.length - 2];
 
-		if (currentFast > currentSlow && previousFast <= previousSlow) 
-			// Just crossed bullish
-			return 'bullish (just crossed)';
+		if (currentFast > currentSlow && previousFast <= previousSlow) return 'bullish (just crossed)';
 
-		if (currentFast < currentSlow && previousFast >= previousSlow) 
-			// Just crossed bearish
-			return 'bearish (just crossed)';
+		if (currentFast < currentSlow && previousFast >= previousSlow) return 'bearish (just crossed)';
 
 		// Count bars since cross
 		let barsSinceCross = 0;
@@ -157,8 +158,8 @@ export class MovingAveragesEnricher {
 
 		if (barsSinceCross === 0) return 'no clear cross';
 
-		return isBullish 
-			? `bullish (${label.split('/')[0]} > ${label.split('/')[1]} since ${barsSinceCross} bars)` 
+		return isBullish
+			? `bullish (${label.split('/')[0]} > ${label.split('/')[1]} since ${barsSinceCross} bars)`
 			: `bearish (${label.split('/')[0]} < ${label.split('/')[1]} since ${barsSinceCross} bars)`;
 	}
 
@@ -169,7 +170,7 @@ export class MovingAveragesEnricher {
 		if (!history || history.length < lookback) return 'insufficient data';
 
 		const recent = history.slice(-lookback);
-		
+
 		// Linear regression
 		const n = recent.length;
 		const x = Array.from({ length: n }, (_, i) => i);
@@ -188,18 +189,12 @@ export class MovingAveragesEnricher {
 
 		// Interpretation
 		let interpretation;
-		if (Math.abs(slopePercent) < 0.05) 
-			interpretation = 'flat';
-		 else if (slopePercent > 0.3) 
-			interpretation = 'accelerating up';
-		 else if (slopePercent > 0.1) 
-			interpretation = 'rising';
-		 else if (slopePercent < -0.3) 
-			interpretation = 'accelerating down';
-		 else if (slopePercent < -0.1) 
-			interpretation = 'declining';
-		 else 
-			interpretation = 'stable';
+		if (Math.abs(slopePercent) < 0.05) interpretation = 'flat';
+		else if (slopePercent > 0.3) interpretation = 'accelerating up';
+		else if (slopePercent > 0.1) interpretation = 'rising';
+		else if (slopePercent < -0.3) interpretation = 'accelerating down';
+		else if (slopePercent < -0.1) interpretation = 'declining';
+		else interpretation = 'stable';
 
 		return `${slopePercent >= 0 ? '+' : ''}${round(slopePercent, 2)}% per bar (${interpretation})`;
 	}
@@ -224,20 +219,15 @@ export class MovingAveragesEnricher {
 		const diff12_26 = Math.abs(slope12 - slope26);
 		const diff26_50 = Math.abs(slope26 - slope50);
 
-		if (diff12_26 < 0.001 && diff26_50 < 0.001) 
-			return 'parallel (healthy trend)';
+		if (diff12_26 < 0.001 && diff26_50 < 0.001) return 'parallel (healthy trend)';
 
 		// Expanding (EMAs diverging)
-		if (slope12 > slope26 && slope26 > slope50) 
-			return 'expanding (strengthening)';
+		if (slope12 > slope26 && slope26 > slope50) return 'expanding (strengthening)';
 
-		if (slope12 < slope26 && slope26 < slope50) 
-			return 'expanding (weakening)';
+		if (slope12 < slope26 && slope26 < slope50) return 'expanding (weakening)';
 
 		// Converging
-		if ((slope12 < slope26 && slope26 < slope50 && slope12 > 0) ||
-		    (slope12 > slope26 && slope26 > slope50 && slope12 < 0)) 
-			return 'converging (momentum fading)';
+		if ((slope12 < slope26 && slope26 < slope50 && slope12 > 0) || (slope12 > slope26 && slope26 > slope50 && slope12 < 0)) return 'converging (momentum fading)';
 
 		return 'mixed';
 	}
@@ -265,17 +255,15 @@ export class MovingAveragesEnricher {
 
 		// Perfect bullish: price > ema12 > ema26 > ema50 > ema200
 		if (currentPrice > ema12 && ema12 > ema26 && ema26 > ema50) {
-			if (ema200 && ema50 > ema200) 
-				return 'perfect bullish (price > ema12 > ema26 > ema50 > ema200)';
-			
+			if (ema200 && ema50 > ema200) return 'perfect bullish (price > ema12 > ema26 > ema50 > ema200)';
+
 			return 'strong bullish (price > ema12 > ema26 > ema50)';
 		}
 
 		// Perfect bearish
 		if (currentPrice < ema12 && ema12 < ema26 && ema26 < ema50) {
-			if (ema200 && ema50 < ema200) 
-				return 'perfect bearish (price < ema12 < ema26 < ema50 < ema200)';
-			
+			if (ema200 && ema50 < ema200) return 'perfect bearish (price < ema12 < ema26 < ema50 < ema200)';
+
 			return 'strong bearish (price < ema12 < ema26 < ema50)';
 		}
 
@@ -289,7 +277,7 @@ export class MovingAveragesEnricher {
 	_identifySupportCluster(emas, currentPrice) {
 		const supports = [];
 
-		for (const [period, data] of Object.entries(emas)) 
+		for (const [period, data] of Object.entries(emas))
 			if (data && data.current < currentPrice) {
 				const distance = currentPrice - data.current;
 				supports.push({ period: parseInt(period), value: data.current, distance });
@@ -303,7 +291,7 @@ export class MovingAveragesEnricher {
 
 		// Multiple EMAs close together form a cluster
 		supports.sort((a, b) => b.value - a.value); // Sort by value descending
-		
+
 		const cluster = [];
 		const tolerance = currentPrice * 0.02; // 2% tolerance
 
@@ -331,7 +319,7 @@ export class MovingAveragesEnricher {
 		let nearestSupport = null;
 		let minDistance = Infinity;
 
-		for (const [period, data] of Object.entries(emas)) 
+		for (const [period, data] of Object.entries(emas))
 			if (data && data.current < currentPrice) {
 				const distance = currentPrice - data.current;
 				if (distance < minDistance) {
@@ -355,13 +343,9 @@ export class MovingAveragesEnricher {
 
 		if (!sma20 || !ema26) return 'insufficient data';
 
-		if (ema26 > sma20) 
-			return 'emas leading (bullish signal)';
-		 else if (ema26 < sma20) 
-			return 'smas leading (bearish signal)';
-		 else 
-			return 'aligned (neutral)';
-		
+		if (ema26 > sma20) return 'emas leading (bullish signal)';
+		else if (ema26 < sma20) return 'smas leading (bearish signal)';
+		else return 'aligned (neutral)';
 	}
 }
 

@@ -232,6 +232,9 @@ export class StatisticalContextService {
 		if (contextDepth.level === 'light') {
 			enriched.moving_averages = await this.maEnricher.enrich({
 				ohlcvData,
+				indicatorService: this.indicatorService,
+				symbol,
+				timeframe,
 				currentPrice
 			});
 			
@@ -247,6 +250,9 @@ export class StatisticalContextService {
 		else if (contextDepth.level === 'medium') {
 			enriched.moving_averages = await this.maEnricher.enrich({
 				ohlcvData,
+				indicatorService: this.indicatorService,
+				symbol,
+				timeframe,
 				currentPrice
 			});
 			
@@ -296,6 +302,9 @@ export class StatisticalContextService {
 		else {
 			enriched.moving_averages = await this.maEnricher.enrich({
 				ohlcvData,
+				indicatorService: this.indicatorService,
+				symbol,
+				timeframe,
 				currentPrice
 			});
 			
@@ -464,20 +473,32 @@ export class StatisticalContextService {
 				bars: 50,
 				config: {}
 			});
-			
-			if (!series || !series.data || series.data.length === 0) return null;
+
+			if (!series || !series.data || series.data.length === 0) {
+				this.logger.warn(`PSAR: No data returned for ${symbol} ${timeframe}`);
+				return null;
+			}
 
 			const current = series.data[series.data.length - 1];
+
+			if (!current || (current.value === null || current.value === undefined)) {
+				this.logger.warn(`PSAR: Invalid current value for ${symbol} ${timeframe}`);
+				return null;
+			}
+
 			const bars = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: 2 });
 
-			if (!bars || !bars.bars || bars.bars.length === 0) return null;
+			if (!bars || !bars.bars || bars.bars.length === 0) {
+				this.logger.warn(`PSAR: No OHLCV data for ${symbol} ${timeframe}`);
+				return null;
+			}
 
 			const currentPrice = bars.bars[bars.bars.length - 1].close;
-			
+
 			const psarValue = current.value;
 			const position = psarValue < currentPrice ? 'below price (bullish)' : 'above price (bearish)';
 			const distance = Math.abs(currentPrice - psarValue);
-			
+
 			return {
 				value: Math.round(psarValue),
 				position,
@@ -485,6 +506,7 @@ export class StatisticalContextService {
 				interpretation: psarValue < currentPrice ? 'trend intact' : 'potential reversal'
 			};
 		} catch (error) {
+			this.logger.warn(`PSAR calculation failed for ${symbol} ${timeframe}: ${error.message}`);
 			return null;
 		}
 	}
