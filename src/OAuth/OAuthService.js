@@ -1,4 +1,4 @@
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID, createHash, createHmac, timingSafeEqual } from 'crypto';
 import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { StorageService } from './StorageService.js';
@@ -11,16 +11,26 @@ export class OAuthService {
 	 * Create an OAuthService instance
 	 * @param {Object} parameters - Configuration parameters
 	 * @param {Object} parameters.logger - Logger instance
+	 * @param {boolean} parameters.isSecuredServer - Whether server is in secured mode
 	 * @throws {Error} If logger is not provided
 	 */
 	constructor(parameters) {
 		this.logger = parameters.logger || null;
 		if (!this.logger) throw new Error('OAuthService requires a logger instance in options');
 
+		this.isSecuredServer = parameters.isSecuredServer !== undefined ? parameters.isSecuredServer : true;
+
 		this.JWT_SECRET = process.env.JWT_SECRET || null;
 		if (!this.JWT_SECRET) throw new Error('OAuthService requires JWT_SECRET to be set in environment variables');
 
-		this.storage = StorageService.getInstance();
+		// AK/SK for Dynamic Client Registration (only required when secured)
+		this.REGISTRATION_ACCESS_KEY = process.env.OAUTH_REGISTRATION_ACCESS_KEY || null;
+		this.REGISTRATION_SECRET_KEY = process.env.OAUTH_REGISTRATION_SECRET_KEY || null;
+
+		if (this.isSecuredServer && (!this.REGISTRATION_ACCESS_KEY || !this.REGISTRATION_SECRET_KEY))
+			throw new Error('OAuthService requires OAUTH_REGISTRATION_ACCESS_KEY and OAUTH_REGISTRATION_SECRET_KEY when SECURED_SERVER=true');
+
+		this.storage = StorageService.getInstance({ logger: this.logger });
 
 		// Validation schemas
 		this.registerSchema = z.object({
@@ -39,7 +49,7 @@ export class OAuthService {
 
 		this.tokenSchema = z.object({
 			grant_type: z.enum(['authorization_code', 'refresh_token']),
-			client_id: z.string().uuid(),
+			client_id: z.string().uuid().optional(),
 			code: z.string().uuid().optional(),
 			code_verifier: z.string().min(43).max(128).optional(),
 			refresh_token: z.string().optional(),
@@ -96,6 +106,18 @@ export class OAuthService {
 
 	// oAuth Step #2 - Dynamic Client Registration : retuns server capabilities and client_id/secret
 	registerPostHandler(req, res) {
+		// If server is secured, validate AK/SK credentials
+		if (this.isSecuredServer) {
+			const authValidation = this.validateRegistrationAuth(req);
+			if (!authValidation.valid) {
+				this.logger.warn(`Registration auth failed: ${authValidation.error}`);
+				return res.status(401).json({
+					error: 'unauthorized',
+					error_description: authValidation.error,
+				});
+			}
+		}
+
 		// Validate input
 		const validation = this.registerSchema.safeParse(req.body);
 		if (!validation.success) {
@@ -119,6 +141,8 @@ export class OAuthService {
 			client_name: client_name,
 			client_redirect_uris: client_redirect_uris,
 		});
+
+		this.logger.info(`New client registered: ${client_name} (${client_id})`);
 
 		res.status(201).json({
 			client_id: client_id,
@@ -150,7 +174,7 @@ export class OAuthService {
 		const { client_id, redirect_uri, code_challenge, code_challenge_method, state, scope } = params;
 
 		// Check if client exists
-		const client = this.storage.getClient(client_id);
+		const client = this.storage.getClientById(client_id);
 		if (!client) {
 			const errorMsg = 'Client not found';
 			this.logger.verbose(errorMsg);
@@ -161,9 +185,21 @@ export class OAuthService {
 		}
 
 		// CRITICAL: Validate redirect_uri against registered URIs
-		if (!client.client_redirect_uris || !client.client_redirect_uris.includes(redirect_uri)) {
+		this.logger.verbose(`Validating redirect_uri: ${redirect_uri}`);
+		this.logger.verbose(`Registered URIs: ${JSON.stringify(client.client_redirect_uris)}`);
+
+		if (!client.client_redirect_uris || !Array.isArray(client.client_redirect_uris)) {
+			const errorMsg = 'No redirect URIs registered for this client';
+			this.logger.info(`${errorMsg} - Client: ${client_id}`);
+			return res.status(400).json({
+				error: 'invalid_request',
+				error_description: errorMsg,
+			});
+		}
+
+		if (!client.client_redirect_uris.includes(redirect_uri)) {
 			const errorMsg = 'Invalid redirect_uri: not registered for this client';
-			this.logger.info(`${errorMsg} - Client: ${client_id}, URI: ${redirect_uri}`);
+			this.logger.info(`${errorMsg} - Client: ${client_id}, URI: ${redirect_uri}, Registered: ${JSON.stringify(client.client_redirect_uris)}`);
 			return res.status(400).json({
 				error: 'invalid_request',
 				error_description: errorMsg,
@@ -190,6 +226,7 @@ export class OAuthService {
 
 		const redirectUrl = new URL(redirect_uri);
 		redirectUrl.searchParams.set('code', client.code);
+
 		if (state) redirectUrl.searchParams.set('state', state);
 
 		res.redirect(302, redirectUrl.toString());
@@ -199,8 +236,9 @@ export class OAuthService {
 	async tokenPostHandler(req, res) {
 		// Validate input
 		const validation = this.tokenSchema.safeParse(req.body);
+
 		if (!validation.success) {
-			const errorMsg = 'Invalid token request';
+			const errorMsg = 'Invalid Token Rquest';
 			this.logger.verbose(`${errorMsg}: ${validation.error.message}`);
 			return res.status(400).json({
 				error: 'invalid_request',
@@ -209,74 +247,64 @@ export class OAuthService {
 			});
 		}
 
-		const params = validation.data;
-		let client_id = params.client_id;
-		let scope = params.scope || 'all';
+		const parameters = validation.data;
+		let client_id = parameters.client_id || null;
 
-		if (params.grant_type === 'authorization_code') {
-			if (!params.code || !params.code_verifier) {
+		let clientData = client_id ? this.storage.getClientById(client_id) : this.storage.getClientByCode(parameters.code);
+
+		if (!clientData) {
+			const errorMsg = 'Client not found or expired';
+			this.logger.info(errorMsg);
+			return res.status(400).json({ error: 'invalid_client', error_description: errorMsg });
+		}
+
+		// Use scope from authorization request if available
+		const scope = clientData.scope || parameters.scope || 'all';
+
+		if (parameters.grant_type === 'authorization_code') {
+			// Check we have the expected parameters for auth code grant
+			if (!parameters.code || !parameters.code_verifier) {
 				const errorMsg = 'Missing code or code_verifier for authorization_code grant';
-				this.logger.verbose(errorMsg);
+				this.logger.error(errorMsg);
 				return res.status(400).json({ error: 'invalid_request', error_description: errorMsg });
 			}
 
-			// Get client data
-			const client = this.storage.getClient(client_id);
-			if (!client) {
-				const errorMsg = 'Client not found';
-				this.logger.info(errorMsg);
-				return res.status(400).json({ error: 'invalid_client', error_description: errorMsg });
-			}
-
 			// Verify the authorization code matches
-			if (client.code !== params.code) {
+			if (clientData.code !== parameters.code) {
 				const errorMsg = 'Invalid authorization code';
-				this.logger.info(errorMsg);
-				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
-			}
-
-			const elapsedSinceRequest = Date.now() - client.code_creation_date;
-			const codeExpirationMs = parseInt(process.env.OAUTH_AUTHORIZATION_CODE_DURATION, 10) * 60 * 1000;
-
-			if (elapsedSinceRequest > codeExpirationMs) {
-				const errorMsg = 'Expired authorization code';
-				this.logger.verbose(errorMsg);
-
-				client.code = null;
-				client.code_challenge = null;
-				client.code_creation_date = null;
-				this.storage.setClient(client_id, client);
-
+				this.logger.enum(errorMsg);
 				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
 			}
 
 			// Verify PKCE challenge
-			const computedChallenge = this.computeChallenge(params.code_verifier);
-			if (computedChallenge !== client.code_challenge) {
+			const computedChallenge = this.computeChallenge(parameters.code_verifier);
+			if (computedChallenge !== clientData.code_challenge) {
 				const errorMsg = 'PKCE verification failed';
-				this.logger.info(errorMsg);
+				this.logger.enum(errorMsg);
 				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
 			}
 
-			// Use scope from authorization request if available
-			scope = client.scope || scope;
+			// Delete the authorization code (one-time use) but keep client if he need to authenticate again later
 
-			// Delete the authorization code (one-time use)
-			client.code = null;
-			client.code_challenge = null;
-			client.code_creation_date = null;
-			this.storage.setClient(client_id, client);
-		} else if (params.grant_type === 'refresh_token') {
-			if (!params.refresh_token) {
+			const cleansedClientData = clientData;
+			cleansedClientData.code = null;
+			cleansedClientData.code_challenge = null;
+			cleansedClientData.code_creation_date = null;
+			cleansedClientData.client_expiration_date = null;
+			cleansedClientData.scope = null;
+			this.storage.setClient(clientData.client_id, cleansedClientData);
+		} else if (parameters.grant_type === 'refresh_token') {
+			// Check we have the expected parameters for token refresh
+			if (!parameters.refresh_token) {
 				const errorMsg = 'Missing refresh_token';
-				this.logger.verbose(errorMsg);
+				this.logger.error(errorMsg);
 				return res.status(400).json({ error: 'invalid_request', error_description: errorMsg });
 			}
 
-			const validation = this.validateToken(params.refresh_token);
+			const validation = this.validateToken(parameters.refresh_token);
 			if (!validation.valid) {
 				const errorMsg = 'Invalid or expired refresh_token';
-				this.logger.info(`${errorMsg}: ${validation.error}`);
+				this.logger.error(`${errorMsg}: ${validation.error}`);
 				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
 			}
 			client_id = validation.payload.sub;
@@ -328,6 +356,78 @@ export class OAuthService {
 
 			return { valid: false, error: errorType, details: error.message };
 		}
+	}
+
+	/**
+	 * Validate AK/SK authentication for Dynamic Client Registration
+	 * Uses HMAC-SHA256 signature verification
+	 * @param {Object} req - Express request object
+	 * @returns {Object} Validation result with valid boolean and error message
+	 */
+	validateRegistrationAuth(req) {
+		const accessKey = req.headers['x-access-key'];
+		const timestamp = req.headers['x-timestamp'];
+		const signature = req.headers['x-signature'];
+
+		// Check required headers
+		if (!accessKey || !timestamp || !signature)
+			return {
+				valid: false,
+				error: 'Missing required headers: X-Access-Key, X-Timestamp, X-Signature',
+			};
+
+		// Verify access key matches
+		if (accessKey !== this.REGISTRATION_ACCESS_KEY)
+			return {
+				valid: false,
+				error: 'Invalid access key',
+			};
+
+		// Verify timestamp is recent (within 5 minutes to prevent replay attacks)
+		const requestTime = parseInt(timestamp, 10);
+		const currentTime = Date.now();
+		const timeDifference = Math.abs(currentTime - requestTime);
+		const maxTimeDifference = 5 * 60 * 1000; // 5 minutes
+
+		if (timeDifference > maxTimeDifference)
+			return {
+				valid: false,
+				error: 'Request timestamp expired (max 5 minutes)',
+			};
+
+		// Compute expected signature
+		// Signature = HMAC-SHA256(secret_key, access_key + timestamp + body)
+		const body = JSON.stringify(req.body);
+		const message = `${accessKey}${timestamp}${body}`;
+		const expectedSignature = createHmac('sha256', this.REGISTRATION_SECRET_KEY).update(message).digest('hex');
+
+		// Use timing-safe comparison to prevent timing attacks
+		try {
+			const signatureBuffer = Buffer.from(signature, 'hex');
+			const expectedBuffer = Buffer.from(expectedSignature, 'hex');
+
+			// Ensure buffers are same length before comparison
+			if (signatureBuffer.length !== expectedBuffer.length)
+				return {
+					valid: false,
+					error: 'Invalid signature',
+				};
+
+			const isValid = timingSafeEqual(signatureBuffer, expectedBuffer);
+
+			if (!isValid)
+				return {
+					valid: false,
+					error: 'Invalid signature',
+				};
+		} catch (error) {
+			return {
+				valid: false,
+				error: 'Signature verification failed',
+			};
+		}
+
+		return { valid: true };
 	}
 }
 
