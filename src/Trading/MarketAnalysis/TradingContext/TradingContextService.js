@@ -37,9 +37,8 @@ export class TradingContextService {
 		const sortedTFs = this._sortTimeframes(Object.keys(timeframes));
 		const currentPrice = timeframes[sortedTFs[sortedTFs.length - 1]]?.price_action?.current;
 
-		if (!currentPrice) {
+		if (!currentPrice) 
 			throw new Error(`Unable to extract current price from timeframe data`);
-		}
 
 		const symbol = metadata.symbol;
 

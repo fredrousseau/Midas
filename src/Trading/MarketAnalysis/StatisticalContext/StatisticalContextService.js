@@ -203,9 +203,8 @@ export class StatisticalContextService {
 		});
 
 		// Validate that we have data
-		if (!ohlcvData || !ohlcvData.bars || ohlcvData.bars.length === 0) {
+		if (!ohlcvData || !ohlcvData.bars || ohlcvData.bars.length === 0) 
 			throw new Error(`No OHLCV data available for ${symbol} on ${timeframe}`);
-		}
 
 		const currentPrice = ohlcvData.bars[ohlcvData.bars.length - 1].close;
 

@@ -47,9 +47,8 @@ export class WebUIAuthService {
 	validateCredentials(username, password) {
 		// Validate input
 		const validation = this.loginSchema.safeParse({ username, password });
-		if (!validation.success) {
+		if (!validation.success) 
 			return { valid: false, error: 'Invalid credentials format' };
-		}
 
 		// Check credentials (constant-time comparison to prevent timing attacks)
 		const usernameMatch = this.constantTimeCompare(username, this.username);
@@ -84,9 +83,8 @@ export class WebUIAuthService {
 		bufB.write(b);
 
 		let result = aLen === bLen ? 0 : 1;
-		for (let i = 0; i < bufA.length; i++) {
+		for (let i = 0; i < bufA.length; i++) 
 			result |= bufA[i] ^ bufB[i];
-		}
 
 		return result === 0;
 	}
@@ -127,9 +125,8 @@ export class WebUIAuthService {
 	validateToken(token) {
 		const validation = this.oauthService.validateToken(token);
 
-		if (!validation.valid) {
+		if (!validation.valid) 
 			return validation;
-		}
 
 		// Additional check: ensure token has webui scope
 		if (validation.payload.scope !== 'webui') {
@@ -172,21 +169,19 @@ export class WebUIAuthService {
 	loginPostHandler(req, res) {
 		const { username, password } = req.body;
 
-		if (!username || !password) {
+		if (!username || !password) 
 			return res.status(400).json({
 				error: 'invalid_request',
 				error_description: 'Missing username or password',
 			});
-		}
 
 		// Validate credentials
 		const validation = this.validateCredentials(username, password);
-		if (!validation.valid) {
+		if (!validation.valid) 
 			return res.status(401).json({
 				error: 'invalid_credentials',
 				error_description: validation.error,
 			});
-		}
 
 		// Create tokens
 		const tokens = this.createWebUIToken(username);
@@ -212,29 +207,26 @@ export class WebUIAuthService {
 	refreshPostHandler(req, res) {
 		const { refresh_token } = req.body;
 
-		if (!refresh_token) {
+		if (!refresh_token) 
 			return res.status(400).json({
 				error: 'invalid_request',
 				error_description: 'Missing refresh_token',
 			});
-		}
 
 		// Validate refresh token
 		const validation = this.validateToken(refresh_token);
-		if (!validation.valid) {
+		if (!validation.valid) 
 			return res.status(401).json({
 				error: 'invalid_token',
 				error_description: validation.error,
 			});
-		}
 
 		// Check if it's a refresh token
-		if (validation.payload.type !== 'webui_refresh') {
+		if (validation.payload.type !== 'webui_refresh') 
 			return res.status(401).json({
 				error: 'invalid_token',
 				error_description: 'Not a refresh token',
 			});
-		}
 
 		// Create new tokens
 		const tokens = this.createWebUIToken(validation.payload.sub);

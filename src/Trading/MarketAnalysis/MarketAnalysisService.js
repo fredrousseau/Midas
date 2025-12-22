@@ -70,8 +70,6 @@ export class MarketAnalysisService {
 		return await this.indicatorService.getIndicatorTimeSeries(options);
 	}
 
-
-
 	// ========== MARKET ANALYSIS METHODS ==========
 
 	/**
@@ -167,13 +165,12 @@ export class MarketAnalysisService {
 
 		// Determine dominant direction
 		let dominantDirection = 'neutral';
-		if (bullishCount > bearishCount && bullishCount > rangingCount) {
+		if (bullishCount > bearishCount && bullishCount > rangingCount) 
 			dominantDirection = 'bullish';
-		} else if (bearishCount > bullishCount && bearishCount > rangingCount) {
+		 else if (bearishCount > bullishCount && bearishCount > rangingCount) 
 			dominantDirection = 'bearish';
-		} else if (rangingCount > 0) {
+		 else if (rangingCount > 0) 
 			dominantDirection = 'ranging';
-		}
 
 		return {
 			symbol,
