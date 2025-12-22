@@ -28,9 +28,8 @@ class AuthClient {
 			const tokens = JSON.parse(stored);
 
 			// Check if access token is expired
-			if (this.isTokenExpired(tokens.access_token)) {
+			if (this.isTokenExpired(tokens.access_token)) 
 				console.log('Access token expired, will need refresh');
-			}
 
 			return tokens;
 		} catch (error) {
@@ -107,17 +106,15 @@ class AuthClient {
 		if (!this.tokens) return null;
 
 		// If access token is still valid, return it
-		if (!this.isTokenExpired(this.tokens.access_token)) {
+		if (!this.isTokenExpired(this.tokens.access_token)) 
 			return this.tokens.access_token;
-		}
 
 		// Try to refresh
 		console.log('Access token expired, attempting refresh...');
 		const refreshed = await this.refreshToken();
 
-		if (refreshed) {
+		if (refreshed) 
 			return this.tokens.access_token;
-		}
 
 		// Refresh failed, clear tokens and redirect to login
 		this.clearTokens();
@@ -166,9 +163,8 @@ class AuthClient {
 	 * @returns {Promise<boolean>} True if refresh successful
 	 */
 	async refreshToken() {
-		if (!this.tokens || !this.tokens.refresh_token) {
+		if (!this.tokens || !this.tokens.refresh_token) 
 			return false;
-		}
 
 		try {
 			const response = await fetch(`${API_BASE}/webui/refresh`, {
@@ -205,7 +201,7 @@ class AuthClient {
 		try {
 			// Call logout endpoint (for server-side cleanup if needed)
 			const token = await this.getAccessToken();
-			if (token) {
+			if (token) 
 				await fetch(`${API_BASE}/webui/logout`, {
 					method: 'POST',
 					headers: {
@@ -213,7 +209,7 @@ class AuthClient {
 						'Content-Type': 'application/json',
 					},
 				});
-			}
+			
 		} catch (error) {
 			console.error('Logout error:', error);
 		} finally {
@@ -240,14 +236,12 @@ class AuthClient {
 			this.refreshTimer = null;
 		}
 
-		if (!this.tokens || !this.tokens.access_token) {
+		if (!this.tokens || !this.tokens.access_token) 
 			return;
-		}
 
 		const payload = this.decodeToken(this.tokens.access_token);
-		if (!payload || !payload.exp) {
+		if (!payload || !payload.exp) 
 			return;
-		}
 
 		// Calculate time until token expires (refresh 5 minutes before expiration)
 		const expirationTime = payload.exp * 1000;
@@ -271,9 +265,8 @@ class AuthClient {
 	async authenticatedFetch(url, options = {}) {
 		const token = await this.getAccessToken();
 
-		if (!token) {
+		if (!token) 
 			throw new Error('Not authenticated');
-		}
 
 		// Add authorization header
 		const headers = options.headers || {};
