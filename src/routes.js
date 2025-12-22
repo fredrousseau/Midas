@@ -24,17 +24,15 @@ function makeLimiter({ logger: logger, windowMs = 15 * 60 * 1000, max = 100 } = 
 function createAuthMiddleware(oauthService) {
 	return function authMiddleware(req, res, next) {
 		const { authorization: authHeader } = req.headers;
-		if (!authHeader || !authHeader.startsWith('Bearer ')) {
+		if (!authHeader || !authHeader.startsWith('Bearer ')) 
 			return res.status(401).json({ error: 'Missing or invalid authorization header' });
-		}
 
 		const token = authHeader.slice(7).trim();
 		if (!token) return res.status(401).json({ error: 'Token cannot be empty' });
 
 		const validation = oauthService.validateToken(token);
-		if (!validation.valid) {
+		if (!validation.valid) 
 			return res.status(401).json({ error: 'Invalid or expired token' });
-		}
 
 		req.user = { id: validation.payload.sub, scope: validation.payload.scope };
 		next();
@@ -114,15 +112,14 @@ export function registerRoutes(parameters) {
 	app.use((req, res, next) => {
 		// Public paths that don't require authentication
 		const publicPaths = ['/login.html', '/auth-client.js'];
-		if (publicPaths.includes(req.path)) {
+		if (publicPaths.includes(req.path)) 
 			return next();
-		}
 
 		// API routes and MCP - require Bearer token in Authorization header (only if server is secured)
 		if (req.path.startsWith('/api/') || req.path.startsWith('/mcp')) {
-			if (isSecuredServer) {
+			if (isSecuredServer) 
 				return authMiddleware(req, res, next);
-			}
+			
 			return next();
 		}
 
@@ -132,9 +129,8 @@ export function registerRoutes(parameters) {
 			const token = req.cookies.webui_auth_token;
 
 			// If no cookie or invalid token, redirect to login
-			if (!token) {
+			if (!token) 
 				return res.redirect('/login.html');
-			}
 
 			const validation = oauthService.validateToken(token);
 
@@ -154,11 +150,10 @@ export function registerRoutes(parameters) {
 		return next();
 	});
 
-	if (isSecuredServer) {
+	if (isSecuredServer) 
 		logger.info('Authentication middleware enabled for API routes and WebUI (server-side)');
-	} else {
+	 else 
 		logger.info('Authentication middleware enabled for WebUI only (SECURED_SERVER=false)');
-	}
 
 	// ========== Channel : MCP / Type : Inventory / Global Handlder ==========
 
