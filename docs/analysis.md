@@ -79,8 +79,17 @@ $ find . -name "*.test.js" -o -name "*.spec.js"
 - Le partial cache hit devient un miss total → inefficace
 - TODO non résolu → dette technique
 
-#### Problème B : Erreurs avalées
-Dans plusieurs enrichers, les erreurs de calcul d'indicateurs sont silencieusement ignorées avec des valeurs par défaut.
+#### Problème B : Erreurs avalées ✅ **CORRIGÉ**
+~~Dans plusieurs enrichers, les erreurs de calcul d'indicateurs sont silencieusement ignorées avec des valeurs par défaut.~~
+
+**Correction appliquée :**
+- Suppression des blocs `try/catch` qui masquaient les erreurs dans les méthodes `_getIndicatorSafe()`
+- Les erreurs sont maintenant propagées correctement au niveau supérieur
+- Fichiers corrigés :
+  - [MomentumEnricher.js](src/Trading/MarketAnalysis/StatisticalContext/enrichers/MomentumEnricher.js)
+  - [MovingAveragesEnricher.js](src/Trading/MarketAnalysis/StatisticalContext/enrichers/MovingAveragesEnricher.js)
+  - [VolumeEnricher.js](src/Trading/MarketAnalysis/StatisticalContext/enrichers/VolumeEnricher.js)
+  - [VolatilityEnricher.js](src/Trading/MarketAnalysis/StatisticalContext/enrichers/VolatilityEnricher.js)
 
 #### Problème C : Typos dans le code ✅ **CORRIGÉ**
 ~~[OAuthService.js:275](src/OAuth/OAuthService.js#L275)~~
@@ -249,7 +258,6 @@ Aucun contrôle sur :
 - Auth middleware factory pattern
 
 ❌ **Mal :**
-- Routes dupliquées : `/api/v1/cache/stats` définie 2 fois (lignes 217 et 386)
 - Validation incohérente entre routes
 - Pas de versioning API réel (juste `/v1/` dans l'URL)
 
@@ -264,8 +272,10 @@ Aucun contrôle sur :
 
 ❌ **Mal :**
 - Partial cache hit non implémenté (TODO ligne 193)
-- `_timeframeToMs` dupliqué dans CacheManager
 - Pas de retry sur Redis connection failure
+
+✅ **Corrigé :**
+- ~~`_timeframeToMs` dupliqué dans CacheManager~~ → Fonction utilitaire partagée créée dans `src/Utils/timeframe.js`
 
 ---
 
