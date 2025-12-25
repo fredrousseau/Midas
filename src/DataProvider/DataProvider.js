@@ -1,5 +1,6 @@
 import { CacheManager } from './CacheManager.js';
 import { RedisCacheAdapter } from './RedisCacheAdapter.js';
+import { timeframeToMs } from '../Utils/timeframe.js';
 
 /**
  * Data provider service for fetching and caching OHLCV market data
@@ -67,12 +68,7 @@ export class DataProvider {
 	 * @throws {Error} If timeframe format is invalid
 	 */
 	_timeframeToMs(timeframe) {
-		const units = { m: 60e3, h: 36e5, d: 864e5, w: 6048e5, M: 2592e6 };
-		const match = timeframe.match(/^(\d+)([mhdwM])$/);
-		if (!match) throw new Error(`Invalid timeframe format: ${timeframe}`);
-		const unitMs = units[match[2]];
-		if (!unitMs) throw new Error(`Unknown timeframe unit: ${match[2]}`);
-		return parseInt(match[1]) * unitMs;
+		return timeframeToMs(timeframe);
 	}
 
 	/**

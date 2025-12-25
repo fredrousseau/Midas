@@ -9,6 +9,8 @@
  * - Redis-only storage (no memory duplication)
  */
 
+import { timeframeToMs } from '../Utils/timeframe.js';
+
 export class CacheManager {
 	/**
 	 * @param {Object} options - Configuration options
@@ -300,10 +302,7 @@ export class CacheManager {
 	 * @returns {number} Timeframe duration in milliseconds
 	 */
 	_parseTimeframe(timeframe) {
-		const units = { m: 60000, h: 3600000, d: 86400000, w: 604800000, M: 2592000000 };
-		const match = timeframe.match(/^(\d+)([mhdwM])$/);
-		if (!match) return 3600000; // Default to 1h
-		return parseInt(match[1]) * (units[match[2]] || 3600000);
+		return timeframeToMs(timeframe, { throwOnError: false, defaultValue: 3600000 });
 	}
 
 	/**
