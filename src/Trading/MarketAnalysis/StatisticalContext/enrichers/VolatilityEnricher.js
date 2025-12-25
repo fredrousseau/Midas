@@ -54,22 +54,18 @@ export class VolatilityEnricher {
 	}
 
 	/**
-	 * Safely get indicator series
+	 * Get indicator series
+	 * @throws {Error} If indicator calculation fails
 	 */
 	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe) {
-		try {
-			const series = await indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator,
-				timeframe,
-				bars: 200,
-				config: {}
-			});
-			return series;
-		} catch (error) {
-			this.logger.warn(`Failed to get ${indicator}: ${error.message}`);
-			return null;
-		}
+		const series = await indicatorService.getIndicatorTimeSeries({
+			symbol,
+			indicator,
+			timeframe,
+			bars: 200,
+			config: {}
+		});
+		return series;
 	}
 
 	/**

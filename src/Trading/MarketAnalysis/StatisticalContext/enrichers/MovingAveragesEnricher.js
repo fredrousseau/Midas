@@ -28,45 +28,39 @@ export class MovingAveragesEnricher {
 	async enrich({ _ohlcvData, indicatorService, symbol, timeframe, currentPrice }) {
 		// ✅ Get EMAs from EXISTING calculations via indicatorService
 		const emas = {};
-		for (const period of this.emaPeriods)
-			try {
-				const series = await indicatorService.getIndicatorTimeSeries({
-					symbol,
-					indicator: 'ema',
-					timeframe,
-					bars: 250, // Extra for EMA200
-					config: { period },
-				});
+		for (const period of this.emaPeriods) {
+			const series = await indicatorService.getIndicatorTimeSeries({
+				symbol,
+				indicator: 'ema',
+				timeframe,
+				bars: 250, // Extra for EMA200
+				config: { period },
+			});
 
-				if (series && series.data && series.data.length > 0)
-					emas[period] = {
-						current: series.data[series.data.length - 1].value,
-						history: series.data.map((d) => d.value),
-					};
-			} catch (error) {
-				this.logger.warn(`Failed to get EMA${period}: ${error.message}`);
-			}
+			if (series && series.data && series.data.length > 0)
+				emas[period] = {
+					current: series.data[series.data.length - 1].value,
+					history: series.data.map((d) => d.value),
+				};
+		}
 
 		// ✅ Get SMAs from EXISTING calculations via indicatorService
 		const smas = {};
-		for (const period of this.smaPeriods)
-			try {
-				const series = await indicatorService.getIndicatorTimeSeries({
-					symbol,
-					indicator: 'sma',
-					timeframe,
-					bars: 200,
-					config: { period },
-				});
+		for (const period of this.smaPeriods) {
+			const series = await indicatorService.getIndicatorTimeSeries({
+				symbol,
+				indicator: 'sma',
+				timeframe,
+				bars: 200,
+				config: { period },
+			});
 
-				if (series && series.data && series.data.length > 0)
-					smas[period] = {
-						current: series.data[series.data.length - 1].value,
-						history: series.data.map((d) => d.value),
-					};
-			} catch (error) {
-				this.logger.warn(`Failed to get SMA${period}: ${error.message}`);
-			}
+			if (series && series.data && series.data.length > 0)
+				smas[period] = {
+					current: series.data[series.data.length - 1].value,
+					history: series.data.map((d) => d.value),
+				};
+		}
 
 		// Build enriched context (same as before, but with existing calculations)
 		return {
