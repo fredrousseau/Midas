@@ -143,7 +143,7 @@ export class Indicator {
 		this.logger.info(`Indicator initialized - Indicator precision: ${this.indicatorPrecision} decimal places`);
 	}
 
-	async calculateIndicators({ symbol, indicators, bars = 200, calculationBars, timeframe }) {
+	async calculateIndicators({ symbol, indicators, bars = 200, calculationBars, timeframe, analysisDate }) {
 		// Calculate warmup needed for indicators
 		const maxWarmup = this._calculateMaxWarmup(indicators);
 
@@ -155,11 +155,12 @@ export class Indicator {
 		const totalBarsToFetch = requestedBars + warmupBuffer;
 
 		// Fetch OHLCV data (will load from cache if available with enough bars)
-		this.logger.verbose(`Fetching OHLCV for ${symbol}: ${requestedBars} requested + ${warmupBuffer} warmup = ${totalBarsToFetch} total bars`);
+		this.logger.verbose(`Fetching OHLCV for ${symbol}: ${requestedBars} requested + ${warmupBuffer} warmup = ${totalBarsToFetch} total bars${analysisDate ? ` until ${analysisDate}` : ''}`);
 		const ohlcvResult = await this.dataProvider.loadOHLCV({
 			symbol,
 			timeframe: timeframe || DEFAULT_TIMEFRAME,
 			count: totalBarsToFetch,
+			analysisDate,
 			useCache: true,
 			detectGaps: false,
 		});
@@ -304,7 +305,7 @@ export class Indicator {
 		return result;
 	}
 
-	async getIndicatorTimeSeries({ symbol, indicator, config = {}, bars = 200, calculationBars, offset = 0, timeframe }) {
+	async getIndicatorTimeSeries({ symbol, indicator, config = {}, bars = 200, calculationBars, offset = 0, timeframe, analysisDate }) {
 		const metadata = getIndicatorMetadata(indicator);
 		if (!metadata) throw new Error(`Invalid indicator: ${indicator}. Use getAvailableIndicators() to see all indicators.`);
 
@@ -315,6 +316,7 @@ export class Indicator {
 			bars,
 			calculationBars,
 			timeframe,
+			analysisDate,
 		});
 
 		const seriesKeys = this._getSeriesKeys(indicator);
