@@ -3,7 +3,6 @@
  */
 
 import { asyncHandler, parseTradingParams } from './Utils/helpers.js';
-import { getTimezone } from './Utils/timezone.js';
 import rateLimit from 'express-rate-limit';
 
 // Helper to create rate limiters with consistent logging
@@ -367,7 +366,7 @@ export function registerRoutes(parameters) {
 		asyncHandler(() => {
 			logger.info('GET /api/v1/config - Getting client configuration');
 			return {
-				timezone: getTimezone(),
+				timezone: process.env.TIMEZONE || 'Europe/Paris',
 			};
 		})
 	);

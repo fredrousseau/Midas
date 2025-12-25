@@ -585,24 +585,4 @@ function round4(x) {
 	return Math.round(x * 10000) / 10000;
 }
 
-/* ===========================================================
-   LEGACY EXPORT (for backward compatibility)
-   =========================================================== */
-
-/**
- * @deprecated Use RegimeDetectionService class instead
- */
-export async function detectRegimeFromService(dataProvider, options = {}) {
-	console.warn('detectRegimeFromService is deprecated. Use RegimeDetectionService class instead.');
-
-	// Create temporary instance
-	const service = new RegimeDetectionService({
-		logger: console,
-		dataProvider,
-		indicatorService: null, // Will use fallback calculations
-	});
-
-	return await service.detectRegime(options);
-}
-
 export default RegimeDetectionService;
