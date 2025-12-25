@@ -187,7 +187,7 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/ohlcv',
 		asyncHandler(async (req) => {
-			const { symbol, timeframe, count, from, to } = parseTradingParams(req.query);
+			const { symbol, timeframe, count, from, to, analysisDate } = parseTradingParams(req.query);
 			logger.info('GET /api/v1/ohlcv - Fetching OHLCV');
 
 			if (!symbol) {
@@ -196,7 +196,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketDataService.loadOHLCV({ symbol, timeframe, count, from, to });
+			return await marketDataService.loadOHLCV({ symbol, timeframe, count, from, to, analysisDate });
 		})
 	);
 
@@ -209,6 +209,24 @@ export function registerRoutes(parameters) {
 			const pairs = await marketDataService.getPairs({ quoteAsset, baseAsset, status });
 
 			return { count: pairs.length, pairs };
+		})
+	);
+
+	app.get(
+		'/api/v1/cache/stats',
+		asyncHandler(async () => {
+			logger.info('GET /api/v1/cache/stats - Fetching cache statistics');
+			return await dataProvider.getCacheStats();
+		})
+	);
+
+	app.delete(
+		'/api/v1/cache',
+		asyncHandler(async (req) => {
+			const { symbol, timeframe } = req.query;
+			logger.info('DELETE /api/v1/cache - Clearing cache', { symbol, timeframe });
+			const cleared = dataProvider.clearCache({ symbol, timeframe });
+			return { cleared, message: `${cleared} cache entries removed` };
 		})
 	);
 
@@ -244,9 +262,9 @@ export function registerRoutes(parameters) {
 		'/api/v1/indicators/:indicator',
 		asyncHandler(async (req) => {
 			const { indicator } = req.params;
-			const { symbol, config } = req.query;
+			const { symbol, config, analysisDate } = req.query;
 			const { timeframe, bars } = parseTradingParams(req.query);
-			logger.info(`GET /api/v1/indicators/${indicator} - Getting time series for ${symbol}`);
+			logger.info(`GET /api/v1/indicators/${indicator} - Getting time series for ${symbol}${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -259,6 +277,7 @@ export function registerRoutes(parameters) {
 				indicator,
 				timeframe,
 				bars,
+				analysisDate,
 				config: config ? JSON.parse(config) : {},
 			});
 		})
@@ -269,8 +288,9 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/regime',
 		asyncHandler(async (req) => {
+			const { analysisDate } = req.query;
 			const { symbol, timeframe, count } = parseTradingParams(req.query);
-			logger.info('GET /api/v1/regime - Detecting market regime');
+			logger.info(`GET /api/v1/regime - Detecting market regime${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -278,7 +298,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketAnalysisService.detectRegime({ symbol, timeframe, count });
+			return await marketAnalysisService.detectRegime({ symbol, timeframe, count, analysisDate });
 		})
 	);
 
@@ -287,8 +307,8 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/context/enriched',
 		asyncHandler(async (req) => {
-			const { symbol, timeframes, count } = req.query;
-			logger.info('GET /api/v1/context/enriched - Unified enriched context');
+			const { symbol, timeframes, count, analysisDate } = req.query;
+			logger.info(`GET /api/v1/context/enriched - Unified enriched context${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -309,6 +329,7 @@ export function registerRoutes(parameters) {
 				symbol,
 				timeframes: tfArray,
 				count: barCount,
+				analysisDate,
 			});
 		})
 	);
@@ -362,19 +383,19 @@ export function registerRoutes(parameters) {
 
 	app.get(
 		'/api/v1/cache/stats',
-		asyncHandler(() => {
+		asyncHandler(async () => {
 			logger.info('GET /api/v1/cache/stats - Getting cache statistics');
-			return dataProvider.getCacheStats();
+			return await dataProvider.getCacheStats();
 		})
 	);
 
 	app.delete(
 		'/api/v1/cache',
-		asyncHandler((req) => {
+		asyncHandler(async (req) => {
 			const { symbol, timeframe } = req.query;
 			logger.info(`DELETE /api/v1/cache - Clearing cache for ${symbol || 'all'}:${timeframe || 'all'}`);
 
-			const cleared = dataProvider.clearCache({ symbol, timeframe });
+			const cleared = await dataProvider.clearCache({ symbol, timeframe });
 
 			return {
 				success: true,

@@ -39,6 +39,7 @@ export function parseTradingParams(query) {
 		from: query.from ? parseIntOr(query.from) : undefined,
 		to: query.to ? parseIntOr(query.to) : undefined,
 		bars: parseIntOr(query.bars, 200),
+		analysisDate: query.analysisDate || undefined,
 	};
 }
 

@@ -131,13 +131,13 @@ export class StatisticalContextService {
 
 	/**
 	 * Generate complete statistical context (NO TRADING CONTEXT)
-	 * @param {Object} params - { symbol, timeframes, count }
+	 * @param {Object} params - { symbol, timeframes, count, analysisDate }
 	 * @returns {Promise<Object>} Complete statistical context with multi-timeframe alignment
 	 */
-	async generateFullContext({ symbol, timeframes, count = 200 }) {
+	async generateFullContext({ symbol, timeframes, count = 200, analysisDate }) {
 		const startTime = Date.now();
 
-		this.logger.info(`Generating statistical context for ${symbol} across ${timeframes.length} timeframes`);
+		this.logger.info(`Generating statistical context for ${symbol} across ${timeframes.length} timeframes${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 		// Generate context for each timeframe
 		const contexts = {};
@@ -152,7 +152,8 @@ export class StatisticalContextService {
 					symbol,
 					tf,
 					count,
-					higherTFData
+					higherTFData,
+					analysisDate
 				);
 				contexts[tf] = tfContext;
 
@@ -175,6 +176,7 @@ export class StatisticalContextService {
 			metadata: {
 				symbol,
 				timestamp: new Date().toISOString(),
+				analysisDate: analysisDate || null,
 				analysis_window: `${count} bars per timeframe`,
 				generation_time_ms: Date.now() - startTime,
 				data_quality: this._assessDataQuality(contexts)
@@ -192,18 +194,19 @@ export class StatisticalContextService {
 	 * Generate context for a single timeframe (COMPLETE)
 	 * @private
 	 */
-	async _generateTimeframeContext(symbol, timeframe, count, higherTFData) {
+	async _generateTimeframeContext(symbol, timeframe, count, higherTFData, analysisDate) {
 		// Get OHLCV data
 		const ohlcvData = await this.dataProvider.loadOHLCV({
 			symbol,
 			timeframe,
 			count: Math.max(count, 250), // Need extra for EMA200
+			analysisDate,
 			useCache: true,
 			detectGaps: false
 		});
 
 		// Validate that we have data
-		if (!ohlcvData || !ohlcvData.bars || ohlcvData.bars.length === 0) 
+		if (!ohlcvData || !ohlcvData.bars || ohlcvData.bars.length === 0)
 			throw new Error(`No OHLCV data available for ${symbol} on ${timeframe}`);
 
 		const currentPrice = ohlcvData.bars[ohlcvData.bars.length - 1].close;
@@ -212,7 +215,8 @@ export class StatisticalContextService {
 		const regimeData = await this.regimeDetectionService.detectRegime({
 			symbol,
 			timeframe,
-			count: Math.min(count, 200)
+			count: Math.min(count, 200),
+			analysisDate
 		});
 
 		// Determine context depth based on timeframe
@@ -286,7 +290,7 @@ export class StatisticalContextService {
 			
 			enriched.trend_indicators = {
 				adx: this._extractADXInfo(regimeData),
-				psar: await this._getPSAR(symbol, timeframe)
+				psar: await this._getPSAR(symbol, timeframe, analysisDate)
 			};
 			
 			enriched.price_action = this.priceActionEnricher.enrich({
@@ -337,7 +341,7 @@ export class StatisticalContextService {
 			
 			enriched.trend_indicators = {
 				adx: this._extractADXInfo(regimeData),
-				psar: await this._getPSAR(symbol, timeframe)
+				psar: await this._getPSAR(symbol, timeframe, analysisDate)
 			};
 			
 			enriched.price_action = this.priceActionEnricher.enrich({
@@ -464,7 +468,7 @@ export class StatisticalContextService {
 	 * Get PSAR indicator
 	 * @private
 	 */
-	async _getPSAR(symbol, timeframe) {
+	async _getPSAR(symbol, timeframe, analysisDate) {
 		try {
 			// Use IndicatorService with custom PSAR implementation
 			const series = await this.indicatorService.getIndicatorTimeSeries({
@@ -472,6 +476,7 @@ export class StatisticalContextService {
 				indicator: 'psar',
 				timeframe,
 				bars: 50,
+				analysisDate,
 				config: { step: 0.02, max: 0.2 }
 			});
 
@@ -488,7 +493,7 @@ export class StatisticalContextService {
 				return null;
 			}
 
-			const bars = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: 2 });
+			const bars = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: 2, analysisDate });
 
 			if (!bars || !bars.bars || bars.bars.length === 0) {
 				this.logger.warn(`PSAR: No OHLCV data for ${symbol} ${timeframe}`);

@@ -58,24 +58,25 @@ export class RegimeDetectionService {
 
 	/**
 	 * Detect market regime for a symbol
-	 * @param {Object} options - { symbol, timeframe, count, useCache, detectGaps }
+	 * @param {Object} options - { symbol, timeframe, count, analysisDate, useCache, detectGaps }
 	 * @returns {Promise<Object>} Regime detection result
 	 */
 	async detectRegime(options = {}) {
-		const { symbol, timeframe = '1h', count = 200 } = options;
+		const { symbol, timeframe = '1h', count = 200, analysisDate } = options;
 
 		if (!symbol)
 			throw new Error('Symbol is required');
 
 		const startTime = Date.now();
 
-		this.logger.info(`Detecting regime for ${symbol} on ${timeframe}`);
+		this.logger.info(`Detecting regime for ${symbol} on ${timeframe}${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 		// Load OHLCV data
 		const ohlcv = await this.dataProvider.loadOHLCV({
 			symbol,
 			timeframe,
 			count: Math.max(count, config.minBars + 50), // Extra bars for indicator warmup
+			analysisDate,
 			useCache: options.useCache !== false,
 			detectGaps: options.detectGaps !== false,
 		});
@@ -88,12 +89,12 @@ export class RegimeDetectionService {
 
 		// Calculate indicators using IndicatorService
 		const [adxData, atrShort, atrLong, er, emaShort, emaLong] = await Promise.all([
-			this._getADX(symbol, timeframe, ohlcv.bars.length),
-			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrShortPeriod),
-			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrLongPeriod),
+			this._getADX(symbol, timeframe, ohlcv.bars.length, analysisDate),
+			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrShortPeriod, analysisDate),
+			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrLongPeriod, analysisDate),
 			this._getEfficiencyRatio(closes, config.erPeriod),
-			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maShortPeriod),
-			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maLongPeriod),
+			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maShortPeriod, analysisDate),
+			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maLongPeriod, analysisDate),
 		]);
 
 		// Get current values
@@ -172,13 +173,14 @@ export class RegimeDetectionService {
 	 * Get ADX indicator using IndicatorService
 	 * @private
 	 */
-	async _getADX(symbol, timeframe, bars) {
+	async _getADX(symbol, timeframe, bars, analysisDate) {
 		try {
 			const series = await this.indicatorService.getIndicatorTimeSeries({
 				symbol,
 				indicator: 'adx',
 				timeframe,
 				bars,
+				analysisDate,
 				config: { period: config.adxPeriod },
 			});
 
@@ -189,7 +191,7 @@ export class RegimeDetectionService {
 			const adx = series.data.map((d) => d.value || d.adx || 0);
 
 			// trading-signals ADX doesn't return plusDI/minusDI, so calculate them separately
-			const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars });
+			const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
 			const { plusDI, minusDI } = this._calculateDI(
 				ohlcv.bars.map((b) => b.high),
 				ohlcv.bars.map((b) => b.low),
@@ -200,7 +202,7 @@ export class RegimeDetectionService {
 			return { adx, plusDI, minusDI };
 		} catch (error) {
 			this.logger.warn(`Failed to get ADX from IndicatorService: ${error.message}. Using fallback calculation.`);
-			return this._calculateADXFallback(symbol, timeframe, bars);
+			return this._calculateADXFallback(symbol, timeframe, bars, analysisDate);
 		}
 	}
 
@@ -208,8 +210,8 @@ export class RegimeDetectionService {
 	 * Fallback ADX calculation (if IndicatorService fails)
 	 * @private
 	 */
-	async _calculateADXFallback(symbol, timeframe, bars) {
-		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars });
+	async _calculateADXFallback(symbol, timeframe, bars, analysisDate) {
+		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
 		const highs = ohlcv.bars.map((b) => b.high);
 		const lows = ohlcv.bars.map((b) => b.low);
 		const closes = ohlcv.bars.map((b) => b.close);
@@ -259,13 +261,14 @@ export class RegimeDetectionService {
 	 * Get ATR indicator using IndicatorService
 	 * @private
 	 */
-	async _getATR(symbol, timeframe, bars, period) {
+	async _getATR(symbol, timeframe, bars, period, analysisDate) {
 		try {
 			const series = await this.indicatorService.getIndicatorTimeSeries({
 				symbol,
 				indicator: 'atr',
 				timeframe,
 				bars,
+				analysisDate,
 				config: { period },
 			});
 
@@ -275,7 +278,7 @@ export class RegimeDetectionService {
 			return series.data.map((d) => d.value || d.atr || 0);
 		} catch (error) {
 			this.logger.warn(`Failed to get ATR from IndicatorService: ${error.message}. Using fallback.`);
-			return this._calculateATRFallback(symbol, timeframe, bars, period);
+			return this._calculateATRFallback(symbol, timeframe, bars, period, analysisDate);
 		}
 	}
 
@@ -283,8 +286,8 @@ export class RegimeDetectionService {
 	 * Fallback ATR calculation
 	 * @private
 	 */
-	async _calculateATRFallback(symbol, timeframe, bars, period) {
-		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars });
+	async _calculateATRFallback(symbol, timeframe, bars, period, analysisDate) {
+		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
 		const highs = ohlcv.bars.map((b) => b.high);
 		const lows = ohlcv.bars.map((b) => b.low);
 		const closes = ohlcv.bars.map((b) => b.close);
@@ -297,13 +300,14 @@ export class RegimeDetectionService {
 	 * Get EMA indicator using IndicatorService
 	 * @private
 	 */
-	async _getEMA(symbol, timeframe, bars, period) {
+	async _getEMA(symbol, timeframe, bars, period, analysisDate) {
 		try {
 			const series = await this.indicatorService.getIndicatorTimeSeries({
 				symbol,
 				indicator: 'ema',
 				timeframe,
 				bars,
+				analysisDate,
 				config: { period },
 			});
 
@@ -313,7 +317,7 @@ export class RegimeDetectionService {
 			return series.data.map((d) => d.value || d.ema || 0);
 		} catch (error) {
 			this.logger.warn(`Failed to get EMA from IndicatorService: ${error.message}. Using fallback.`);
-			return this._calculateEMAFallback(symbol, timeframe, bars, period);
+			return this._calculateEMAFallback(symbol, timeframe, bars, period, analysisDate);
 		}
 	}
 
@@ -321,8 +325,8 @@ export class RegimeDetectionService {
 	 * Fallback EMA calculation
 	 * @private
 	 */
-	async _calculateEMAFallback(symbol, timeframe, bars, period) {
-		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars });
+	async _calculateEMAFallback(symbol, timeframe, bars, period, analysisDate) {
+		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
 		const closes = ohlcv.bars.map((b) => b.close);
 		return ema(closes, period);
 	}

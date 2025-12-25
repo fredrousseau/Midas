@@ -53,7 +53,7 @@ export class MarketAnalysisService {
 
 	/**
 	 * Detect market regime for a symbol
-	 * @param {Object} options - Detection options
+	 * @param {Object} options - Detection options (includes analysisDate for backtesting)
 	 * @returns {Promise<Object>} Market regime analysis
 	 */
 	async detectRegime(options) {
@@ -63,7 +63,7 @@ export class MarketAnalysisService {
 	/**
 	 * Get indicator time series (proxy to IndicatorService)
 	 * Used by StatisticalContextService enrichers
-	 * @param {Object} options - Time series options
+	 * @param {Object} options - Time series options (includes analysisDate for backtesting)
 	 * @returns {Promise<Object>} Indicator time series
 	 */
 	async getIndicatorTimeSeries(options) {
@@ -75,17 +75,18 @@ export class MarketAnalysisService {
 	/**
 	 * Generate complete market analysis with trading context
 	 * Orchestrates StatisticalContextService and TradingContextService
-	 * @param {Object} options - { symbol, timeframes, count }
+	 * @param {Object} options - { symbol, timeframes, count, analysisDate }
 	 * @returns {Promise<Object>} Complete analysis with statistical context and trading decisions
 	 */
 	async generateEnrichedContext(options) {
-		const { symbol, timeframes = ['1h'], count = 200 } = options;
+		const { symbol, timeframes = ['1h'], count = 200, analysisDate } = options;
 
 		// Step 1: Generate statistical context (indicators, patterns, alignment)
 		const statisticalContext = await this.statisticalContext.generateFullContext({
 			symbol,
 			timeframes,
-			count
+			count,
+			analysisDate
 		});
 
 		// Step 2: Generate trading context from statistical analysis
@@ -100,15 +101,16 @@ export class MarketAnalysisService {
 
 	/**
 	 * Generate statistical context only (no trading decisions)
-	 * @param {Object} options - { symbol, timeframes, count }
+	 * @param {Object} options - { symbol, timeframes, count, analysisDate }
 	 * @returns {Promise<Object>} Statistical context without trading decisions
 	 */
 	async generateStatisticalContext(options) {
-		const { symbol, timeframes = ['1h'], count = 200 } = options;
+		const { symbol, timeframes = ['1h'], count = 200, analysisDate } = options;
 		return await this.statisticalContext.generateFullContext({
 			symbol,
 			timeframes,
-			count
+			count,
+			analysisDate
 		});
 	}
 
