@@ -272,7 +272,7 @@ export class OAuthService {
 			// Verify the authorization code matches
 			if (clientData.code !== parameters.code) {
 				const errorMsg = 'Invalid authorization code';
-				this.logger.enum(errorMsg);
+				this.logger.error(errorMsg);
 				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
 			}
 
@@ -280,7 +280,7 @@ export class OAuthService {
 			const computedChallenge = this.computeChallenge(parameters.code_verifier);
 			if (computedChallenge !== clientData.code_challenge) {
 				const errorMsg = 'PKCE verification failed';
-				this.logger.enum(errorMsg);
+				this.logger.error(errorMsg);
 				return res.status(400).json({ error: 'invalid_grant', error_description: errorMsg });
 			}
 
