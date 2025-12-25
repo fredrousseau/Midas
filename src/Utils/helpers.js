@@ -52,34 +52,9 @@ export function asyncHandler(handler) {
 	return async (req, res, next) => {
 		try {
 			const result = await handler(req, res);
-			if (result !== undefined && !res.headersSent) 
-				res.json({ success: true, data: result });
-			
+			if (result !== undefined && !res.headersSent) res.json({ success: true, data: result });
 		} catch (error) {
 			next(error);
 		}
 	};
-}
-
-/**
- * Validate OHLC bar relationship
- * @param {Object} bar - OHLC bar
- * @returns {boolean}
- */
-export function isValidOHLC(bar) {
-	const { high, low, open, close } = bar;
-	return (
-		high >= Math.max(open, close, low) &&
-		low <= Math.min(open, close, high)
-	);
-}
-
-/**
- * Check if error is retryable (network/server errors)
- * @param {Error} error - Error object
- * @returns {boolean}
- */
-export function isRetryableError(error) {
-	const retryablePattern = /timeout|ECONNREFUSED|ENOTFOUND|5[0-3][0-9]|429/i;
-	return retryablePattern.test(error.message);
 }
