@@ -78,8 +78,9 @@ function initCharts() {
             // Enable scroll and zoom
             rightOffset: 10,
             barSpacing: 10,
+            minBarSpacing: 0.5,  // Permet un dezoom beaucoup plus profond
             fixLeftEdge: false,
-            lockVisibleTimeRangeOnResize: true,
+            lockVisibleTimeRangeOnResize: false,  // Permet la synchronisation complète
             rightBarStaysOnScroll: true,
             visible: true,
         },
@@ -130,8 +131,9 @@ function initCharts() {
             // Enable scroll and zoom
             rightOffset: 10,
             barSpacing: 10,
+            minBarSpacing: 0.5,  // Permet un dezoom beaucoup plus profond
             fixLeftEdge: false,
-            lockVisibleTimeRangeOnResize: true,
+            lockVisibleTimeRangeOnResize: false,  // Permet la synchronisation complète
             rightBarStaysOnScroll: true,
         },
         handleScroll: {
@@ -150,30 +152,38 @@ function initCharts() {
     });
 
     // Synchronize time scales between main chart and indicator chart
-    // Use flags to prevent infinite loops
-    let syncingTimeScale = false;
+    // Use separate flags for each direction to prevent infinite loops
+    let syncingFromMain = false;
+    let syncingFromIndicator = false;
 
-    const syncTimeScale = (sourceChart, targetChart, timeRange) => {
-        if (!timeRange || syncingTimeScale) return;
+    mainChart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+        if (!logicalRange || syncingFromIndicator) return;
 
-        syncingTimeScale = true;
+        syncingFromMain = true;
         try {
-            targetChart.timeScale().setVisibleRange(timeRange);
+            console.debug('Syncing indicator chart to main chart logical range:', logicalRange);
+            indicatorChart.timeScale().setVisibleLogicalRange(logicalRange);
         } catch (e) {
             // Ignore errors when chart has no data yet
-            console.debug('Time scale sync error (normal if chart empty):', e.message);
+            console.debug('Logical range sync error (normal if chart empty):', e.message);
         } finally {
-            // Use setTimeout to ensure flag is reset after the event propagates
-            setTimeout(() => { syncingTimeScale = false; }, 0);
+            syncingFromMain = false;
         }
-    };
-
-    mainChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
-        syncTimeScale(mainChart, indicatorChart, timeRange);
     });
 
-    indicatorChart.timeScale().subscribeVisibleTimeRangeChange((timeRange) => {
-        syncTimeScale(indicatorChart, mainChart, timeRange);
+    indicatorChart.timeScale().subscribeVisibleLogicalRangeChange((logicalRange) => {
+        if (!logicalRange || syncingFromMain) return;
+
+        syncingFromIndicator = true;
+        try {
+            console.debug('Syncing main chart to indicator chart logical range:', logicalRange);
+            mainChart.timeScale().setVisibleLogicalRange(logicalRange);
+        } catch (e) {
+            // Ignore errors when chart has no data yet
+            console.debug('Logical range sync error (normal if chart empty):', e.message);
+        } finally {
+            syncingFromIndicator = false;
+        }
     });
 
     // Synchronize crosshair position between charts
@@ -467,6 +477,9 @@ function updateMainChart(ohlcvData) {
     const candles = transformOHLCVtoCandles(ohlcvData);
     candlestickSeries.setData(candles);
 
+    // Force initial fit to ensure all data is visible
+    mainChart.timeScale().fitContent();
+
     // Update chart info with timezone-aware formatting
     const chartInfo = document.getElementById('chartInfo');
     const firstDate = formatTimestamp(ohlcvData.firstTimestamp);
@@ -681,6 +694,12 @@ async function loadData() {
 
             for (const indicator of selectedIndicators)
                 await addIndicator(indicator, symbol, timeframe, bars, analysisDate);
+
+            // Force time scale synchronization after loading indicators
+            const mainLogicalRange = mainChart.timeScale().getVisibleLogicalRange();
+            if (mainLogicalRange) {
+                indicatorChart.timeScale().setVisibleLogicalRange(mainLogicalRange);
+            }
 
             showStatus('Tous les indicateurs ont été chargés', 'success');
             setTimeout(hideStatus, 2000);
