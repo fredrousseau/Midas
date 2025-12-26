@@ -7,6 +7,8 @@ let candlestickSeries = null;
 let indicatorChart = null;
 let currentData = null;
 let indicatorSeries = new Map();
+let catalogData = null;
+let indicatorDescriptions = new Map(); // Map indicator key to description
 let appTimezone = 'Europe/Paris'; // Default, will be loaded from API
 let isSyncingCharts = false; // Flag to prevent circular sync
 
