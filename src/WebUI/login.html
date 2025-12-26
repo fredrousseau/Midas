@@ -240,8 +240,12 @@
         const togglePasswordBtn = document.getElementById('togglePassword');
 
         // Check if already authenticated
-        if (authClient.isAuthenticated()) {
+        // Prevent redirect loop: only redirect if not coming from index.html
+        if (authClient.isAuthenticated() && !document.referrer.includes('/index.html')) {
             window.location.href = '/index.html';
+        } else if (document.referrer.includes('/index.html')) {
+            // Coming from index.html means server rejected our auth - clear tokens
+            authClient.clearTokens();
         }
 
         // Toggle password visibility
