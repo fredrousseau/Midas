@@ -939,6 +939,9 @@
     <script>
         // Setup logout button
         document.addEventListener('DOMContentLoaded', () => {
+            // Clear login redirect flag - we successfully loaded the page
+            sessionStorage.removeItem('login_redirect_attempted');
+
             const logoutBtn = document.getElementById('logoutBtn');
 
             // Show logout button if auth is enabled and user is authenticated

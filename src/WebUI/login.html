@@ -240,12 +240,18 @@
         const togglePasswordBtn = document.getElementById('togglePassword');
 
         // Check if already authenticated
-        // Prevent redirect loop: only redirect if not coming from index.html
-        if (authClient.isAuthenticated() && !document.referrer.includes('/index.html')) {
+        // Prevent redirect loop: use sessionStorage flag to track redirect attempts
+        const redirectAttempted = sessionStorage.getItem('login_redirect_attempted');
+
+        if (authClient.isAuthenticated() && !redirectAttempted) {
+            // Mark that we're attempting a redirect
+            sessionStorage.setItem('login_redirect_attempted', 'true');
             window.location.href = '/index.html';
-        } else if (document.referrer.includes('/index.html')) {
-            // Coming from index.html means server rejected our auth - clear tokens
+        } else if (redirectAttempted) {
+            // If we've already tried to redirect, it means server rejected our auth
+            // Clear the invalid tokens and the redirect flag
             authClient.clearTokens();
+            sessionStorage.removeItem('login_redirect_attempted');
         }
 
         // Toggle password visibility
@@ -276,6 +282,8 @@
                 const result = await authClient.login(username, password);
 
                 if (result.success) {
+                    // Clear redirect flag on successful login
+                    sessionStorage.removeItem('login_redirect_attempted');
                     // Redirect to main app
                     window.location.href = '/index.html';
                 } else {
