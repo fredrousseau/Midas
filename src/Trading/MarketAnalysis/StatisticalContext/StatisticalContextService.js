@@ -706,7 +706,7 @@ export class StatisticalContextService {
 				neutral: neutralCount
 			},
 			conflicts,
-			recommendation: this._getAlignmentRecommendation(quality, conflicts)
+			recommendation: this._getAlignmentRecommendation(quality, conflicts, dominantDirection)
 		};
 	}
 
@@ -714,16 +714,20 @@ export class StatisticalContextService {
 	 * Get alignment recommendation
 	 * @private
 	 */
-	_getAlignmentRecommendation(quality, conflicts) {
-		if (conflicts.length > 0 && conflicts[0].severity === 'high') 
+	_getAlignmentRecommendation(quality, conflicts, dominantDirection) {
+		if (conflicts.length > 0 && conflicts[0].severity === 'high')
 			return 'WAIT - Major timeframe conflicts detected';
-		
-		if (quality === 'perfect' || quality === 'good') 
-			return 'TRADE - Strong multi-timeframe alignment';
-		
-		if (quality === 'mixed') 
+
+		// If all timeframes are ranging/neutral, wait for breakout
+		if (dominantDirection === 'neutral')
+			return 'WAIT - All timeframes ranging, no clear directional bias';
+
+		if (quality === 'perfect' || quality === 'good')
+			return `TRADE - Strong ${dominantDirection} alignment across timeframes`;
+
+		if (quality === 'mixed')
 			return 'CAUTION - Mixed signals across timeframes';
-		
+
 		return 'WAIT - Poor alignment, unclear direction';
 	}
 
