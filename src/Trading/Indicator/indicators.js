@@ -106,6 +106,7 @@ const SERIES_MAP = {
 	stochastic: ['stochasticK', 'stochasticD'],
 	stochRsi: ['stochRsi', 'stochRsiSignal'],
 	dma: ['dmaShort', 'dmaLong'],
+	adx: ['adx', 'plusDI', 'minusDI'],
 	ichimoku: ['ichimokuTenkan', 'ichimokuKijun', 'ichimokuSenkouA', 'ichimokuSenkouB', 'ichimokuChikou'],
 };
 
@@ -117,6 +118,7 @@ const RESULT_MAPPERS = {
 	stochastic: (r) => ({ stochasticK: r?.stochK?.valueOf(), stochasticD: r?.stochD?.valueOf() }),
 	stochRsi: (r) => ({ stochRsi: r?.smoothing?.k?.getResult?.(), stochRsiSignal: r?.smoothing?.d?.getResult?.() }),
 	dma: (r) => ({ dmaShort: r?.short?.valueOf(), dmaLong: r?.long?.valueOf() }),
+	adx: (instance) => ({ adx: instance?.getResult?.() || 0, plusDI: instance?.dx?.pdi || 0, minusDI: instance?.dx?.mdi || 0 }),
 	ichimoku: (r) => ({
 		ichimokuTenkan: r?.tenkan?.valueOf(),
 		ichimokuKijun: r?.kijun?.valueOf(),
@@ -250,8 +252,9 @@ export class Indicator {
 
 			instance.update(input);
 			const result = instance.getResult();
-			// For StochRSI, pass the instance itself to access smoothing values
-			this._mapResultToSeries(indicatorKey, indicatorKey === 'stochRsi' ? instance : result, series);
+			// For StochRSI and ADX, pass the instance itself to access additional values
+			const needsInstance = indicatorKey === 'stochRsi' || indicatorKey === 'adx';
+			this._mapResultToSeries(indicatorKey, needsInstance ? instance : result, series);
 		} catch (error) {
 			for (const seriesKey of this._getSeriesKeys(indicatorKey)) this._addToSeries(series, seriesKey, null);
 		}
