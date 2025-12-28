@@ -171,48 +171,30 @@ export class RegimeDetectionService {
 	 * @private
 	 */
 	async _getADX(symbol, timeframe, bars, analysisDate) {
-		try {
-			const series = await this.indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator: 'adx',
-				timeframe,
-				bars,
-				analysisDate,
-				config: { period: config.adxPeriod },
-			});
+		const series = await this.indicatorService.getIndicatorTimeSeries({
+			symbol,
+			indicator: 'adx',
+			timeframe,
+			bars,
+			analysisDate,
+			config: { period: config.adxPeriod },
+		});
 
-			if (!series?.data || series.data.length === 0) throw new Error('No ADX data returned');
+		if (!series?.data || series.data.length === 0) throw new Error('No ADX data returned from IndicatorService');
 
-			// Extract ADX values
-			const adx = series.data.map((d) => d.value || d.adx || 0);
+		// Extract ADX values
+		const adx = series.data.map((d) => d.value || d.adx || 0);
 
-			// trading-signals ADX doesn't return plusDI/minusDI, so calculate them separately
-			const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
-			const { plusDI, minusDI } = this._calculateDI(
-				ohlcv.bars.map((b) => b.high),
-				ohlcv.bars.map((b) => b.low),
-				ohlcv.bars.map((b) => b.close),
-				config.adxPeriod
-			);
-
-			return { adx, plusDI, minusDI };
-		} catch (error) {
-			this.logger.warn(`Failed to get ADX from IndicatorService: ${error.message}. Using fallback calculation.`);
-			return this._calculateADXFallback(symbol, timeframe, bars, analysisDate);
-		}
-	}
-
-	/**
-	 * Fallback ADX calculation (if IndicatorService fails)
-	 * @private
-	 */
-	async _calculateADXFallback(symbol, timeframe, bars, analysisDate) {
+		// trading-signals ADX doesn't return plusDI/minusDI, so calculate them separately
 		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
-		const highs = ohlcv.bars.map((b) => b.high);
-		const lows = ohlcv.bars.map((b) => b.low);
-		const closes = ohlcv.bars.map((b) => b.close);
+		const { plusDI, minusDI } = this._calculateDI(
+			ohlcv.bars.map((b) => b.high),
+			ohlcv.bars.map((b) => b.low),
+			ohlcv.bars.map((b) => b.close),
+			config.adxPeriod
+		);
 
-		return calculateADX(highs, lows, closes, config.adxPeriod);
+		return { adx, plusDI, minusDI };
 	}
 
 	/**
@@ -258,37 +240,18 @@ export class RegimeDetectionService {
 	 * @private
 	 */
 	async _getATR(symbol, timeframe, bars, period, analysisDate) {
-		try {
-			const series = await this.indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator: 'atr',
-				timeframe,
-				bars,
-				analysisDate,
-				config: { period },
-			});
+		const series = await this.indicatorService.getIndicatorTimeSeries({
+			symbol,
+			indicator: 'atr',
+			timeframe,
+			bars,
+			analysisDate,
+			config: { period },
+		});
 
-			if (!series?.data || series.data.length === 0) throw new Error('No ATR data returned');
+		if (!series?.data || series.data.length === 0) throw new Error('No ATR data returned from IndicatorService');
 
-			return series.data.map((d) => d.value || d.atr || 0);
-		} catch (error) {
-			this.logger.warn(`Failed to get ATR from IndicatorService: ${error.message}. Using fallback.`);
-			return this._calculateATRFallback(symbol, timeframe, bars, period, analysisDate);
-		}
-	}
-
-	/**
-	 * Fallback ATR calculation
-	 * @private
-	 */
-	async _calculateATRFallback(symbol, timeframe, bars, period, analysisDate) {
-		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
-		const highs = ohlcv.bars.map((b) => b.high);
-		const lows = ohlcv.bars.map((b) => b.low);
-		const closes = ohlcv.bars.map((b) => b.close);
-
-		const tr = calculateTrueRange(highs, lows, closes);
-		return rma(tr, period);
+		return series.data.map((d) => d.value || d.atr || 0);
 	}
 
 	/**
@@ -296,33 +259,18 @@ export class RegimeDetectionService {
 	 * @private
 	 */
 	async _getEMA(symbol, timeframe, bars, period, analysisDate) {
-		try {
-			const series = await this.indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator: 'ema',
-				timeframe,
-				bars,
-				analysisDate,
-				config: { period },
-			});
+		const series = await this.indicatorService.getIndicatorTimeSeries({
+			symbol,
+			indicator: 'ema',
+			timeframe,
+			bars,
+			analysisDate,
+			config: { period },
+		});
 
-			if (!series?.data || series.data.length === 0) throw new Error('No EMA data returned');
+		if (!series?.data || series.data.length === 0) throw new Error('No EMA data returned from IndicatorService');
 
-			return series.data.map((d) => d.value || d.ema || 0);
-		} catch (error) {
-			this.logger.warn(`Failed to get EMA from IndicatorService: ${error.message}. Using fallback.`);
-			return this._calculateEMAFallback(symbol, timeframe, bars, period, analysisDate);
-		}
-	}
-
-	/**
-	 * Fallback EMA calculation
-	 * @private
-	 */
-	async _calculateEMAFallback(symbol, timeframe, bars, period, analysisDate) {
-		const ohlcv = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: bars, analysisDate });
-		const closes = ohlcv.bars.map((b) => b.close);
-		return ema(closes, period);
+		return series.data.map((d) => d.value || d.ema || 0);
 	}
 
 	/**
@@ -345,8 +293,11 @@ export class RegimeDetectionService {
 			raw[i] = sum === 0 ? 0 : net / sum;
 		}
 
-		// Smooth ER for stability
-		return ema(raw, 3);
+		// Smooth ER for stability using simple EMA calculation
+		const k = 2 / (3 + 1);
+		const smoothed = [raw[0]];
+		for (let i = 1; i < raw.length; i++) smoothed[i] = raw[i] * k + smoothed[i - 1] * (1 - k);
+		return smoothed;
 	}
 
 	/**
@@ -474,20 +425,8 @@ export class RegimeDetectionService {
 }
 
 /* ===========================================================
-   FALLBACK CALCULATION UTILITIES (Pure Functions)
-   Used when IndicatorService is unavailable
+   CALCULATION UTILITIES (Pure Functions)
    =========================================================== */
-
-/**
- * Calculate EMA
- */
-function ema(values, period) {
-	const k = 2 / (period + 1);
-	const out = [];
-	out[0] = values[0];
-	for (let i = 1; i < values.length; i++) out[i] = values[i] * k + out[i - 1] * (1 - k);
-	return out;
-}
 
 /**
  * Calculate RMA (Wilder's smoothing)
@@ -520,49 +459,6 @@ function calculateTrueRange(highs, lows, closes) {
 		tr[i] = Math.max(high - low, Math.abs(high - prev), Math.abs(low - prev));
 	}
 	return tr;
-}
-
-/**
- * Calculate ADX
- */
-function calculateADX(highs, lows, closes, period) {
-	const len = highs.length;
-
-	const dmPlus = [];
-	const dmMinus = [];
-	for (let i = 1; i < len; i++) {
-		const up = highs[i] - highs[i - 1];
-		const down = lows[i - 1] - lows[i];
-
-		dmPlus.push(up > down && up > 0 ? up : 0);
-		dmMinus.push(down > up && down > 0 ? down : 0);
-	}
-
-	const tr = calculateTrueRange(highs, lows, closes).slice(1);
-
-	const smTR = rma(tr, period);
-	const smDMp = rma(dmPlus, period);
-	const smDMm = rma(dmMinus, period);
-
-	const plusDI = [];
-	const minusDI = [];
-	const dx = [];
-
-	for (let i = 0; i < smTR.length; i++) {
-		const atr = smTR[i];
-		const p = atr === 0 ? 0 : (smDMp[i] / atr) * 100;
-		const m = atr === 0 ? 0 : (smDMm[i] / atr) * 100;
-
-		plusDI.push(p);
-		minusDI.push(m);
-
-		const den = p + m;
-		dx.push(den === 0 ? 0 : (Math.abs(p - m) / den) * 100);
-	}
-
-	const adxArr = rma(dx, period);
-
-	return { adx: adxArr, plusDI, minusDI };
 }
 
 /* ===========================================================
