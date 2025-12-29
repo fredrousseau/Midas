@@ -21,12 +21,13 @@ export class TradingContextService {
 	}
 
 	/**
-	 * Generate trading context from statistical analysis
-	 * @param {Object} statisticalContext - Complete statistical context from StatisticalContextService
+	 * Generate trading context from market analysis
+	 * @param {Object} marketAnalysis - Complete market analysis from MarketAnalysisService
 	 * @returns {Object} Actionable trading context
 	 */
-	generate(statisticalContext) {
-		const { timeframes, multi_timeframe_alignment: mtfAlignment, metadata } = statisticalContext;
+	generate(marketAnalysis) {
+		const { statistical_context, multi_timeframe_alignment: mtfAlignment } = marketAnalysis;
+		const { timeframes, metadata } = statistical_context;
 
 		// Get timeframe data
 		const h1 = timeframes['1h'] || {};
@@ -37,7 +38,7 @@ export class TradingContextService {
 		const sortedTFs = this._sortTimeframes(Object.keys(timeframes));
 		const currentPrice = timeframes[sortedTFs[sortedTFs.length - 1]]?.price_action?.current;
 
-		if (!currentPrice) 
+		if (!currentPrice)
 			throw new Error(`Unable to extract current price from timeframe data`);
 
 		const symbol = metadata.symbol;
@@ -61,6 +62,7 @@ export class TradingContextService {
 		const recommendation = this._generateRecommendation(scenarios, tradeQuality, mtfAlignment);
 
 		return {
+			symbol,
 			current_market_phase: marketPhase,
 			scenario_analysis: scenarios,
 			optimal_entry_strategy: entryStrategies,
@@ -73,32 +75,39 @@ export class TradingContextService {
 	}
 
 	/**
-	 * Determine current market phase
+	 * Determine current market phase with direction awareness
 	 */
 	_determineMarketPhase(h1, h4, d1, mtfAlignment) {
 		const h1Regime = h1.regime?.type || '';
 		const h4Regime = h4.regime?.type || '';
 		const d1Regime = d1.regime?.type || '';
+		const dominantDirection = mtfAlignment.dominant_direction || 'neutral';
 
 		// Trending phases
 		if (h4Regime.includes('trending') && d1Regime.includes('trending')) {
-			if (h1Regime.includes('ranging')) 
-				return 'consolidation within uptrend';
-			
-			return 'strong trend';
+			const direction = dominantDirection === 'bullish' ? 'uptrend' :
+			                  dominantDirection === 'bearish' ? 'downtrend' : 'trend';
+
+			if (h1Regime.includes('ranging'))
+				return `consolidation within ${direction}`;
+
+			return `strong ${direction}`;
 		}
 
 		// Ranging phases
-		if (h1Regime.includes('ranging') && h4Regime.includes('ranging')) 
+		if (h1Regime.includes('ranging') && h4Regime.includes('ranging'))
 			return 'consolidation';
 
 		// Breakout phases
-		if (h1Regime.includes('breakout') || h4Regime.includes('breakout')) 
-			return 'breakout phase';
+		if (h1Regime.includes('breakout') || h4Regime.includes('breakout')) {
+			const breakoutDir = h1Regime.includes('bullish') || h4Regime.includes('bullish') ? 'bullish' :
+			                    h1Regime.includes('bearish') || h4Regime.includes('bearish') ? 'bearish' : '';
+			return breakoutDir ? `${breakoutDir} breakout phase` : 'breakout phase';
+		}
 
 		// Transition
 		if ((h1Regime.includes('trending') && h4Regime.includes('ranging')) ||
-		    (h1Regime.includes('ranging') && h4Regime.includes('trending'))) 
+		    (h1Regime.includes('ranging') && h4Regime.includes('trending')))
 			return 'transition phase';
 
 		return 'mixed conditions';
