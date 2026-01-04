@@ -29,14 +29,14 @@ export class TradingContextService {
 		const { statistical_context, multi_timeframe_alignment: mtfAlignment } = marketAnalysis;
 		const { timeframes, metadata } = statistical_context;
 
-		// Get timeframe data
-		const h1 = timeframes['1h'] || {};
-		const h4 = timeframes['4h'] || {};
-		const d1 = timeframes['1d'] || {};
+		// Get timeframe data from array
+		const h1 = timeframes.find(tf => tf.timeframe === '1h') || {};
+		const h4 = timeframes.find(tf => tf.timeframe === '4h') || {};
+		const d1 = timeframes.find(tf => tf.timeframe === '1d') || {};
 
 		// Extract current price from the lowest timeframe available
-		const sortedTFs = this._sortTimeframes(Object.keys(timeframes));
-		const currentPrice = timeframes[sortedTFs[sortedTFs.length - 1]]?.price_action?.current;
+		const sortedTFs = this._sortTimeframes(timeframes.map(tf => tf.timeframe));
+		const currentPrice = timeframes.find(tf => tf.timeframe === sortedTFs[sortedTFs.length - 1])?.price_action?.current;
 
 		if (!currentPrice)
 			throw new Error(`Unable to extract current price from timeframe data`);

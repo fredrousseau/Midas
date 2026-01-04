@@ -213,16 +213,12 @@ export class MarketAnalysisService {
 				conflicts: marketAnalysis.multi_timeframe_alignment.conflicts.length,
 				recommendation: marketAnalysis.multi_timeframe_alignment.recommendation.action,
 			},
-			regimes: Object.fromEntries(
-				Object.entries(marketAnalysis.statistical_context.timeframes).map(([tf, ctx]) => [
-					tf,
-					{
-						type: ctx.regime?.type,
-						confidence: ctx.regime?.confidence,
-						interpretation: ctx.regime?.interpretation,
-					},
-				])
-			),
+			regimes: marketAnalysis.statistical_context.timeframes.map(ctx => ({
+				timeframe: ctx.timeframe,
+				type: ctx.regime?.type,
+				confidence: ctx.regime?.confidence,
+				interpretation: ctx.regime?.interpretation,
+			})),
 		};
 	}
 }

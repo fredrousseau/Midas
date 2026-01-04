@@ -124,11 +124,17 @@ export class StatisticalContextService {
 				};
 			} catch (error) {
 				this.logger.error(`Failed to generate context for ${tf}: ${error.message}`);
-				contexts[tf] = { error: error.message };
+				contexts[tf] = { timeframe: tf, error: error.message };
 			}
 		}
 
 		const alignment = this._analyzeMultiTimeframeAlignment(contexts);
+
+		// Convert contexts object to array
+		const timeframesArray = Object.entries(contexts).map(([tf, data]) => ({
+			timeframe: tf,
+			...data
+		}));
 
 		return {
 			metadata: {
@@ -139,7 +145,7 @@ export class StatisticalContextService {
 				generation_time_ms: Date.now() - startTime,
 				data_quality: this._assessDataQuality(contexts),
 			},
-			timeframes: contexts,
+			timeframes: timeframesArray,
 			multi_timeframe_alignment: alignment,
 		};
 	}
