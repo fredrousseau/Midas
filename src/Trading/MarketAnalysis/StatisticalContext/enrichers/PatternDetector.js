@@ -1,6 +1,12 @@
 /**
- * Pattern Detector
- * Detects chart patterns: flags, triangles, wedges, head & shoulders
+ * Pattern Detector - Optimized Version
+ * Uses ATR-based swing detection for robust pattern recognition
+ *
+ * Features:
+ * - Swing-based detection (filters noise via ATR thresholds)
+ * - Volume confirmation for breakouts
+ * - Unified pattern structure
+ * - Pre-calculated indicators from VolatilityEnricher
  */
 
 import { round } from '#utils/statisticalHelpers.js';
@@ -12,96 +18,192 @@ export class PatternDetector {
 
 	/**
 	 * Detect patterns in price action
+	 * @param {Object} ohlcvData - OHLCV data with bars array
+	 * @param {number} currentPrice - Current market price
+	 * @param {Object} volatilityIndicators - Pre-calculated volatility indicators from VolatilityEnricher
+	 * @returns {Array|null} Array of detected patterns or null
 	 */
-	detect({ ohlcvData, currentPrice }) {
-		const bars = ohlcvData.bars;
-		
+	detect({ ohlcvData, currentPrice, volatilityIndicators }) {
+		const bars = ohlcvData?.bars;
+		if (!bars || bars.length < 30) return null;
+
+		if (!volatilityIndicators?.atr?.value)
+			throw new Error('PatternDetector requires volatilityIndicators.atr.value from VolatilityEnricher');
+
+		const atr = volatilityIndicators.atr.value;
+		const avgVolume = this._calculateAvgVolume(bars, 20);
+
 		const patterns = [];
 
-		// Detect bull/bear flags
-		const flagPattern = this._detectFlag(bars, currentPrice);
-		if (flagPattern) patterns.push(flagPattern);
+		const detectors = [
+			() => this._detectFlag(bars, currentPrice, atr),
+			() => this._detectTriangle(bars, atr),
+			() => this._detectWedge(bars, atr),
+			() => this._detectHeadAndShoulders(bars, atr),
+			() => this._detectDouble(bars, atr)
+		];
 
-		// Detect triangles
-		const trianglePattern = this._detectTriangle(bars, currentPrice);
-		if (trianglePattern) patterns.push(trianglePattern);
+		for (const detector of detectors) {
+			const pattern = detector();
+			if (!pattern) continue;
 
-		// Detect wedges
-		const wedgePattern = this._detectWedge(bars, currentPrice);
-		if (wedgePattern) patterns.push(wedgePattern);
+			// Volume confirmation
+			if (this._confirmVolume(bars, avgVolume, pattern)) {
+				pattern.confidence = Math.min(0.95, round(pattern.confidence + 0.05, 2));
+				pattern.volume_confirmed = true;
+			}
 
-		// Detect head & shoulders
-		const hsPattern = this._detectHeadAndShoulders(bars, currentPrice);
-		if (hsPattern) patterns.push(hsPattern);
+			// Breakout confirmation
+			if (this._confirmBreakout(bars, pattern, atr)) {
+				pattern.status = 'confirmed';
+				pattern.confidence = Math.min(0.95, round(pattern.confidence + 0.1, 2));
+				pattern.breakout_confirmed = true;
+			}
 
-		// Detect double top/bottom
-		const doublePattern = this._detectDouble(bars, currentPrice);
-		if (doublePattern) patterns.push(doublePattern);
+			// Add ATR context for risk management
+			pattern.atr = round(atr, 2);
+			if (pattern.invalidation)
+				pattern.atr_ratio = round(Math.abs(currentPrice - pattern.invalidation) / atr, 1);
 
-		return patterns.length > 0 ? patterns : null;
+			patterns.push(pattern);
+		}
+
+		return patterns.length ? patterns : null;
+	}
+
+	/* =========================
+	   CORE STRUCTURE
+	========================= */
+
+	/**
+	 * Find significant swings using ATR filtering
+	 * Eliminates noise by requiring swings > minATR multiple
+	 */
+	_findSwings(bars, atr, minATR = 1.2) {
+		const swings = [];
+
+		for (let i = 2; i < bars.length - 2; i++) {
+			const h = bars[i].high;
+			const l = bars[i].low;
+
+			const isHigh =
+				h > bars[i - 1].high &&
+				h > bars[i + 1].high &&
+				(h - Math.min(bars[i - 1].low, bars[i + 1].low)) > atr * minATR;
+
+			const isLow =
+				l < bars[i - 1].low &&
+				l < bars[i + 1].low &&
+				(Math.max(bars[i - 1].high, bars[i + 1].high) - l) > atr * minATR;
+
+			if (isHigh) swings.push({ type: 'high', price: h, index: i });
+			if (isLow) swings.push({ type: 'low', price: l, index: i });
+		}
+
+		return swings;
 	}
 
 	/**
-	 * Detect bull or bear flag
+	 * Calculate average volume
 	 */
-	_detectFlag(bars, currentPrice) {
-		if (bars.length < 20) return null;
+	_calculateAvgVolume(bars, period = 20) {
+		const recent = bars.slice(-period);
+		return recent.reduce((a, b) => a + b.volume, 0) / recent.length;
+	}
 
-		// Look for pole (strong move) followed by consolidation
-		const recentBars = bars.slice(-30);
-		
-		// Find potential pole (8-15 bars of strong directional move)
-		for (let poleEnd = recentBars.length - 5; poleEnd >= 15; poleEnd--) 
+	/* =========================
+	   CONFIRMATIONS
+	========================= */
+
+	/**
+	 * Confirm volume spike
+	 * Reversal patterns need stronger volume (1.4x) than continuations (1.2x)
+	 */
+	_confirmVolume(bars, avgVolume, pattern) {
+		const ratio = bars[bars.length - 1].volume / avgVolume;
+		return pattern.type === 'reversal' ? ratio > 1.4 : ratio > 1.2;
+	}
+
+	/**
+	 * Confirm breakout with ATR buffer
+	 * Prevents false breakouts from minor price movements
+	 */
+	_confirmBreakout(bars, pattern, atr) {
+		const last = bars[bars.length - 1];
+
+		// Head & Shoulders / Inverse: check neckline break
+		if (pattern.neckline !== undefined)
+			return Math.abs(last.close - pattern.neckline) > atr * 0.3;
+
+		// Other patterns: check invalidation level with bias
+		if (pattern.invalidation !== undefined) {
+			if (pattern.bias === 'bullish')
+				return last.close > pattern.invalidation + atr * 0.2;
+			if (pattern.bias === 'bearish')
+				return last.close < pattern.invalidation - atr * 0.2;
+		}
+
+		return false;
+	}
+
+	/* =========================
+	   PATTERNS
+	========================= */
+
+	/**
+	 * Detect bull or bear flag
+	 * Strong pole + consolidation flag
+	 */
+	_detectFlag(bars, currentPrice, atr) {
+		const recent = bars.slice(-30);
+
+		// Dynamic pole search (8-15 bars)
+		for (let poleEnd = recent.length - 5; poleEnd >= 15; poleEnd--)
 			for (let poleStart = poleEnd - 15; poleStart < poleEnd - 8; poleStart++) {
-				const pole = recentBars.slice(poleStart, poleEnd);
+				const pole = recent.slice(poleStart, poleEnd);
 				const poleMove = pole[pole.length - 1].close - pole[0].close;
 				const poleRange = Math.abs(poleMove);
-				const poleDirection = poleMove > 0 ? 'bull' : 'bear';
-				
-				// Check if pole is strong enough (at least 3% move)
-				const polePct = (poleRange / pole[0].close) * 100;
-				if (polePct < 3) continue;
+				const poleATRMultiple = poleRange / atr;
 
-				// Check for consolidation after pole (flag)
-				const flag = recentBars.slice(poleEnd);
+				// Pole must be at least 3x ATR
+				if (poleATRMultiple < 3) continue;
+
+				const bias = poleMove > 0 ? 'bullish' : 'bearish';
+				const flag = recent.slice(poleEnd);
+
+				// Flag duration: 5-15 bars
 				if (flag.length < 5 || flag.length > 15) continue;
 
-				// Flag should be smaller than pole
 				const flagHigh = Math.max(...flag.map(b => b.high));
 				const flagLow = Math.min(...flag.map(b => b.low));
 				const flagRange = flagHigh - flagLow;
-				
-				if (flagRange > poleRange * 0.5) continue; // Flag too large
 
-				// Flag should be consolidating (not continuing the trend strongly)
+				// Flag should be smaller than pole (< 50%)
+				if (flagRange > poleRange * 0.5) continue;
+
+				// Flag should consolidate, not continue trending
 				const flagMove = flag[flag.length - 1].close - flag[0].close;
 				if (Math.abs(flagMove) > poleRange * 0.3) continue;
 
-				// Calculate target (pole projection)
-				const target = poleDirection === 'bull' 
-					? currentPrice + poleRange 
-					: currentPrice - poleRange;
-
-				// Invalidation level
-				const invalidation = poleDirection === 'bull'
-					? flagLow
-					: flagHigh;
-
-				// Confidence based on flag duration and tightness
+				// Base confidence + bonuses
 				let confidence = 0.70;
 				if (flag.length >= 8 && flag.length <= 12) confidence += 0.05; // Ideal duration
 				if (flagRange < poleRange * 0.3) confidence += 0.05; // Tight flag
 
 				return {
-					pattern: poleDirection === 'bull' ? 'bull flag' : 'bear flag',
+					pattern: bias === 'bullish' ? 'bull flag' : 'bear flag',
+					type: 'continuation',
+					bias,
 					confidence: round(confidence, 2),
-					pole: `${round(pole[0].close, 0)} to ${round(pole[pole.length - 1].close, 0)} (+${round(poleRange, 0)} points)`,
+					invalidation: bias === 'bullish' ? flagLow : flagHigh,
+					target_if_breaks: bias === 'bullish'
+						? currentPrice + poleRange
+						: currentPrice - poleRange,
+					interpretation: `${bias} continuation pattern`,
 					pole_duration: pole.length,
 					flag_duration: `${flag.length} bars (${flag.length >= 8 && flag.length <= 12 ? 'healthy' : flag.length < 8 ? 'short' : 'extended'})`,
-					target_if_breaks: round(target, 0),
-					invalidation: round(invalidation, 0),
-					status: 'forming',
-					interpretation: `${poleDirection}ish continuation pattern`
+					pole: `${round(pole[0].close, 0)} to ${round(pole[pole.length - 1].close, 0)} (+${round(poleRange, 0)} pts, ${round(poleATRMultiple, 1)}x ATR)`,
+					status: 'forming'
 				};
 			}
 
@@ -109,256 +211,201 @@ export class PatternDetector {
 	}
 
 	/**
-	 * Detect triangle (ascending, descending, symmetrical)
+	 * Detect triangle patterns
+	 * Ascending, descending, or symmetrical based on swing slopes
 	 */
-	_detectTriangle(bars, currentPrice) {
-		if (bars.length < 15) return null;
+	_detectTriangle(bars, atr) {
+		const swings = this._findSwings(bars.slice(-60), atr, 1.3);
+		const highs = swings.filter(s => s.type === 'high');
+		const lows = swings.filter(s => s.type === 'low');
 
-		const recentBars = bars.slice(-20);
-		const highs = recentBars.map(b => b.high);
-		const lows = recentBars.map(b => b.low);
+		if (highs.length < 2 || lows.length < 2) return null;
 
-		// Find trend lines
-		const highTrend = this._calculateTrendLine(highs);
-		const lowTrend = this._calculateTrendLine(lows);
+		const highSlope = highs[highs.length - 1].price - highs[0].price;
+		const lowSlope = lows[lows.length - 1].price - lows[0].price;
 
-		// Check for converging lines (triangle)
-		if (Math.abs(highTrend.slope) < 0.1 && Math.abs(lowTrend.slope) < 0.1) 
-			return null; // Rectangle, not triangle
+		// Symmetrical triangle: converging lines
+		if (highSlope < 0 && lowSlope > 0)
+			return {
+				pattern: 'symmetrical triangle',
+				type: 'continuation',
+				bias: 'neutral',
+				confidence: 0.65,
+				interpretation: 'consolidation pattern',
+				upper_bound: round(highs[highs.length - 1].price, 0),
+				lower_bound: round(lows[lows.length - 1].price, 0),
+				status: 'forming'
+			};
 
-		// Determine triangle type
-		let triangleType;
-		let interpretation;
-		let bias;
+		// Ascending triangle: flat top + rising bottom
+		if (Math.abs(highSlope) < atr && lowSlope > atr)
+			return {
+				pattern: 'ascending triangle',
+				type: 'continuation',
+				bias: 'bullish',
+				confidence: 0.70,
+				interpretation: 'bullish continuation pattern',
+				upper_bound: round(highs[highs.length - 1].price, 0),
+				lower_bound: round(lows[lows.length - 1].price, 0),
+				invalidation: highs[highs.length - 1].price,
+				status: 'forming'
+			};
 
-		if (highTrend.slope < -0.001 && Math.abs(lowTrend.slope) < 0.001) {
-			// Descending triangle (bearish)
-			triangleType = 'descending triangle';
-			interpretation = 'bearish continuation pattern';
-			bias = 'downside breakout expected';
-		} else if (Math.abs(highTrend.slope) < 0.001 && lowTrend.slope > 0.001) {
-			// Ascending triangle (bullish)
-			triangleType = 'ascending triangle';
-			interpretation = 'bullish continuation pattern';
-			bias = 'upside breakout expected';
-		} else if (highTrend.slope < -0.001 && lowTrend.slope > 0.001) {
-			// Symmetrical triangle (neutral)
-			triangleType = 'symmetrical triangle';
-			interpretation = 'consolidation pattern';
-			bias = 'breakout direction uncertain';
-		} else {
-			return null;
-		}
+		// Descending triangle: falling top + flat bottom
+		if (highSlope < -atr && Math.abs(lowSlope) < atr)
+			return {
+				pattern: 'descending triangle',
+				type: 'continuation',
+				bias: 'bearish',
+				confidence: 0.70,
+				interpretation: 'bearish continuation pattern',
+				upper_bound: round(highs[highs.length - 1].price, 0),
+				lower_bound: round(lows[lows.length - 1].price, 0),
+				invalidation: lows[lows.length - 1].price,
+				status: 'forming'
+			};
 
-		// Calculate apex (where lines would meet)
-		const currentRange = highs[highs.length - 1] - lows[lows.length - 1];
-		const initialRange = highs[0] - lows[0];
-		const compression = ((initialRange - currentRange) / initialRange) * 100;
-
-		if (compression < 20) return null; // Not compressed enough
-
-		return {
-			pattern: triangleType,
-			confidence: 0.65,
-			interpretation,
-			bias,
-			compression: `${round(compression, 0)}%`,
-			apex_approaching: compression > 60 ? 'yes (breakout imminent)' : 'no',
-			upper_bound: round(highs[highs.length - 1], 0),
-			lower_bound: round(lows[lows.length - 1], 0)
-		};
+		return null;
 	}
 
 	/**
-	 * Detect wedge (rising or falling)
+	 * Detect wedge patterns
+	 * Both lines sloping in same direction (reversal indicator)
 	 */
-	_detectWedge(bars, currentPrice) {
-		if (bars.length < 15) return null;
+	_detectWedge(bars, atr) {
+		const swings = this._findSwings(bars.slice(-60), atr, 1.3);
+		const highs = swings.filter(s => s.type === 'high');
+		const lows = swings.filter(s => s.type === 'low');
 
-		const recentBars = bars.slice(-20);
-		const highs = recentBars.map(b => b.high);
-		const lows = recentBars.map(b => b.low);
+		if (highs.length < 2 || lows.length < 2) return null;
 
-		const highTrend = this._calculateTrendLine(highs);
-		const lowTrend = this._calculateTrendLine(lows);
+		const highSlope = highs[highs.length - 1].price - highs[0].price;
+		const lowSlope = lows[lows.length - 1].price - lows[0].price;
 
-		// Both lines must be sloping in same direction for wedge
-		if (highTrend.slope * lowTrend.slope < 0) return null;
+		// Rising wedge: both rising, lower faster (bearish reversal)
+		if (highSlope > 0 && lowSlope > 0 && lowSlope > highSlope)
+			return {
+				pattern: 'rising wedge',
+				type: 'reversal',
+				bias: 'bearish',
+				confidence: 0.65,
+				interpretation: 'bearish reversal pattern (typically breaks down)',
+				invalidation: lows[lows.length - 1].price,
+				status: 'forming'
+			};
 
-		// Check if converging
-		const slopeDiff = Math.abs(highTrend.slope - lowTrend.slope);
-		if (slopeDiff < 0.0005) return null; // Parallel lines (channel)
+		// Falling wedge: both falling, upper faster (bullish reversal)
+		if (highSlope < 0 && lowSlope < 0 && lowSlope < highSlope)
+			return {
+				pattern: 'falling wedge',
+				type: 'reversal',
+				bias: 'bullish',
+				confidence: 0.65,
+				interpretation: 'bullish reversal pattern (typically breaks up)',
+				invalidation: highs[highs.length - 1].price,
+				status: 'forming'
+			};
 
-		let wedgeType, interpretation;
+		return null;
+	}
 
-		if (highTrend.slope > 0 && lowTrend.slope > 0) {
-			wedgeType = 'rising wedge';
-			interpretation = 'bearish reversal pattern (typically breaks down)';
-		} else if (highTrend.slope < 0 && lowTrend.slope < 0) {
-			wedgeType = 'falling wedge';
-			interpretation = 'bullish reversal pattern (typically breaks up)';
-		} else {
-			return null;
-		}
+	/**
+	 * Detect head and shoulders
+	 * Three peaks with middle highest and equal shoulders
+	 */
+	_detectHeadAndShoulders(bars, atr) {
+		const swings = this._findSwings(bars.slice(-80), atr, 1.5);
+		const highs = swings.filter(s => s.type === 'high');
+
+		if (highs.length < 3) return null;
+
+		const [L, H, R] = highs.slice(-3);
+
+		// Head must be higher than both shoulders
+		if (H.price <= L.price || H.price <= R.price) return null;
+
+		// Shoulders must be roughly equal (within 5%)
+		if (Math.abs(L.price - R.price) / L.price > 0.05) return null;
+
+		// Find neckline (support between shoulders)
+		const neckline = Math.min(
+			...bars.slice(L.index, R.index).map(b => b.low)
+		);
 
 		return {
-			pattern: wedgeType,
-			confidence: 0.60,
-			interpretation,
+			pattern: 'head and shoulders',
+			type: 'reversal',
+			bias: 'bearish',
+			confidence: 0.75,
+			interpretation: 'bearish reversal pattern',
+			left_shoulder: round(L.price, 0),
+			head: round(H.price, 0),
+			right_shoulder: round(R.price, 0),
+			neckline: round(neckline, 0),
 			status: 'forming'
 		};
 	}
 
 	/**
-	 * Detect head and shoulders (or inverse)
-	 */
-	_detectHeadAndShoulders(bars, currentPrice) {
-		if (bars.length < 30) return null;
-
-		const recentBars = bars.slice(-40);
-		const peaks = this._findPeaks(recentBars.map(b => b.high));
-		const troughsRaw = this._findPeaks(recentBars.map(b => -b.low));
-		const troughs = { values: troughsRaw.values.map(v => -v), indices: troughsRaw.indices };
-
-		// Head and shoulders: need 3 peaks with middle one highest
-		if (peaks.values.length >= 3) {
-			const lastThree = peaks.values.slice(-3);
-			const [left, head, right] = lastThree;
-			
-			// Check if middle is highest and sides similar
-			if (head > left * 1.02 && head > right * 1.02) {
-				const shoulderDiff = Math.abs(left - right) / left;
-				
-				if (shoulderDiff < 0.05)  // Shoulders roughly equal
-					return {
-						pattern: 'head and shoulders',
-						confidence: 0.70,
-						interpretation: 'bearish reversal pattern',
-						left_shoulder: round(left, 0),
-						head: round(head, 0),
-						right_shoulder: round(right, 0),
-						status: 'forming',
-						neckline: troughs.values.length > 0 ? round(Math.max(...troughs.values.slice(-2)), 0) : null
-					};
-				
-			}
-		}
-
-		// Inverse head and shoulders: need 3 troughs with middle one lowest
-		if (troughs.values.length >= 3) {
-			const lastThree = troughs.values.slice(-3);
-			const [left, head, right] = lastThree;
-			
-			if (head < left * 0.98 && head < right * 0.98) {
-				const shoulderDiff = Math.abs(left - right) / left;
-				
-				if (shoulderDiff < 0.05) 
-					return {
-						pattern: 'inverse head and shoulders',
-						confidence: 0.70,
-						interpretation: 'bullish reversal pattern',
-						left_shoulder: round(left, 0),
-						head: round(head, 0),
-						right_shoulder: round(right, 0),
-						status: 'forming',
-						neckline: peaks.values.length > 0 ? round(Math.min(...peaks.values.slice(-2)), 0) : null
-					};
-				
-			}
-		}
-
-		return null;
-	}
-
-	/**
 	 * Detect double top or bottom
+	 * Two similar peaks/troughs indicating reversal
 	 */
-	_detectDouble(bars, currentPrice) {
-		if (bars.length < 20) return null;
-
-		const recentBars = bars.slice(-30);
-		const peaks = this._findPeaks(recentBars.map(b => b.high));
-		const troughsRaw = this._findPeaks(recentBars.map(b => -b.low));
-		const troughs = { values: troughsRaw.values.map(v => -v), indices: troughsRaw.indices };
+	_detectDouble(bars, atr) {
+		const swings = this._findSwings(bars.slice(-50), atr, 1.3);
+		const highs = swings.filter(s => s.type === 'high');
+		const lows = swings.filter(s => s.type === 'low');
 
 		// Double top
-		if (peaks.values.length >= 2) {
-			const lastTwo = peaks.values.slice(-2);
-			const diff = Math.abs(lastTwo[1] - lastTwo[0]) / lastTwo[0];
-			
-			if (diff < 0.02) { // Peaks within 2% of each other
-				const minBetween = Math.min(...recentBars.slice(peaks.indices[peaks.indices.length - 2], peaks.indices[peaks.indices.length - 1]).map(b => b.low));
-				
+		if (highs.length >= 2) {
+			const [A, B] = highs.slice(-2);
+
+			// Peaks within 2% of each other
+			if (Math.abs(A.price - B.price) / A.price < 0.02) {
+				const supportLevel = Math.min(
+					...bars.slice(A.index, B.index).map(b => b.low)
+				);
+
 				return {
 					pattern: 'double top',
+					type: 'reversal',
+					bias: 'bearish',
 					confidence: 0.65,
 					interpretation: 'bearish reversal pattern',
-					first_top: round(lastTwo[0], 0),
-					second_top: round(lastTwo[1], 0),
-					support_level: round(minBetween, 0),
-					status: currentPrice < minBetween ? 'confirmed' : 'forming'
+					first_top: round(A.price, 0),
+					second_top: round(B.price, 0),
+					support_level: round(supportLevel, 0),
+					invalidation: supportLevel,
+					status: 'forming'
 				};
 			}
 		}
 
 		// Double bottom
-		if (troughs.values.length >= 2) {
-			const lastTwo = troughs.values.slice(-2);
-			const diff = Math.abs(lastTwo[1] - lastTwo[0]) / lastTwo[0];
-			
-			if (diff < 0.02) {
-				const maxBetween = Math.max(...recentBars.slice(troughs.indices[troughs.indices.length - 2], troughs.indices[troughs.indices.length - 1]).map(b => b.high));
-				
+		if (lows.length >= 2) {
+			const [A, B] = lows.slice(-2);
+
+			// Troughs within 2% of each other
+			if (Math.abs(A.price - B.price) / A.price < 0.02) {
+				const resistanceLevel = Math.max(
+					...bars.slice(A.index, B.index).map(b => b.high)
+				);
+
 				return {
 					pattern: 'double bottom',
+					type: 'reversal',
+					bias: 'bullish',
 					confidence: 0.65,
 					interpretation: 'bullish reversal pattern',
-					first_bottom: round(lastTwo[0], 0),
-					second_bottom: round(lastTwo[1], 0),
-					resistance_level: round(maxBetween, 0),
-					status: currentPrice > maxBetween ? 'confirmed' : 'forming'
+					first_bottom: round(A.price, 0),
+					second_bottom: round(B.price, 0),
+					resistance_level: round(resistanceLevel, 0),
+					invalidation: resistanceLevel,
+					status: 'forming'
 				};
 			}
 		}
 
 		return null;
-	}
-
-	/**
-	 * Find peaks in array
-	 */
-	_findPeaks(values) {
-		const peaks = { values: [], indices: [] };
-		
-		for (let i = 2; i < values.length - 2; i++) 
-			// Peak: higher than neighbors
-			if (values[i] > values[i - 1] && 
-			    values[i] > values[i + 1] &&
-			    values[i] > values[i - 2] && 
-			    values[i] > values[i + 2]) {
-				peaks.values.push(values[i]);
-				peaks.indices.push(i);
-			}
-		
-		return peaks;
-	}
-
-	/**
-	 * Calculate trend line (simple linear regression)
-	 */
-	_calculateTrendLine(values) {
-		const n = values.length;
-		const x = Array.from({ length: n }, (_, i) => i);
-		
-		const sumX = x.reduce((a, b) => a + b, 0);
-		const sumY = values.reduce((a, b) => a + b, 0);
-		const sumXY = x.reduce((acc, xi, i) => acc + xi * values[i], 0);
-		const sumX2 = x.reduce((acc, xi) => acc + xi * xi, 0);
-		
-		const slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-		const intercept = (sumY - slope * sumX) / n;
-		
-		return { slope, intercept };
 	}
 }
 

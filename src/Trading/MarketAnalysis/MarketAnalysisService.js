@@ -1,206 +1,230 @@
+/**
+ * Market Analysis Service (Unified)
+ * Handles multi-timeframe market analysis and trading context generation
+ * Orchestrates StatisticalContextService and generates actionable insights
+ */
+
+import StatisticalContextService from './StatisticalContext/StatisticalContextService.js';
 import { RegimeDetectionService } from './RegimeDetection/RegimeDetectionService.js';
-import { StatisticalContextService } from './StatisticalContext/StatisticalContextService.js';
 import { TradingContextService } from './TradingContext/TradingContextService.js';
 
-/**
- * Market analysis service that orchestrates statistical and trading analysis
- */
 export class MarketAnalysisService {
-
-	/**
-	 * Create a MarketAnalysisService instance
-	 * @param {Object} parameters - Configuration parameters
-	 * @param {Object} parameters.logger - Logger instance
-	 * @param {Object} parameters.dataProvider - Data provider instance
-	 * @param {Object} parameters.indicatorService - Indicator service instance
-	 * @throws {Error} If logger, dataProvider, or indicatorService is not provided
-	 */
 	constructor(parameters = {}) {
-		this.logger = parameters.logger || null;
-
+		this.logger = parameters.logger ;
 		if (!this.logger) throw new Error('MarketAnalysisService requires a logger instance in options');
 
-		this.dataProvider = parameters.dataProvider || null;
+		this.dataProvider = parameters.dataProvider;
 		if (!this.dataProvider) throw new Error('MarketAnalysisService requires a dataProvider instance in options');
 
-		this.indicatorService = parameters.indicatorService || null;
+		this.indicatorService = parameters.indicatorService;
 		if (!this.indicatorService) throw new Error('MarketAnalysisService requires an indicatorService instance in options');
 
-		// Regime detection service - detects market regimes
-		this.regimeDetectionService = new RegimeDetectionService({
-			logger: this.logger,
-			dataProvider: this.dataProvider,
-			indicatorService: this.indicatorService
+		// Initialize sub-services
+		this.regimeDetectionService = new RegimeDetectionService(parameters);
+		this.statisticalContextService = new StatisticalContextService({
+			...parameters,
+			regimeDetectionService: this.regimeDetectionService
 		});
-
-		// Statistical analysis service - generates technical indicators and statistical context
-		this.statisticalContext = new StatisticalContextService({
-			logger: this.logger,
-			dataProvider: this.dataProvider,
-			regimeDetectionService: this.regimeDetectionService,
-			indicatorService: this.indicatorService
-		});
-
-		// Trading context service - generates actionable trading decisions
-		this.tradingContext = new TradingContextService({
-			logger: this.logger
-		});
+		this.tradingContextService = new TradingContextService({ logger: this.logger });
 
 		this.logger.info('MarketAnalysisService initialized.');
 	}
 
-	// ========== PROXY METHODS FOR SUB-SERVICES ==========
-
 	/**
-	 * Detect market regime for a symbol
-	 * @param {Object} options - Detection options (includes analysisDate for backtesting)
-	 * @returns {Promise<Object>} Market regime analysis
+	 * Generate full market analysis for a symbol across multiple timeframes
+	 * @param {Object} params - { symbol, timeframes, count, analysisDate }
+	 * @returns {Promise<Object>} - Complete analysis with alignment, conflicts, and recommendations
 	 */
-	async detectRegime(options) {
-		return await this.regimeDetectionService.detectRegime(options);
+	async generateMarketAnalysis({ symbol, timeframes, count = 200, analysisDate }) {
+		// Generate statistical context with built-in alignment analysis
+		const statContext = await this.statisticalContextService.generateFullContext({
+			symbol,
+			timeframes,
+			count,
+			analysisDate,
+		});
+
+		const alignment = statContext.multi_timeframe_alignment;
+
+		// Generate recommendation based on alignment
+		const recommendation = this._generateRecommendation(alignment);
+
+		// Assess overall quality
+		const quality = this._assessAlignmentQuality(alignment);
+
+		return {
+			symbol,
+			timestamp: new Date().toISOString(),
+			analysisDate: analysisDate || null,
+			statistical_context: statContext,
+			multi_timeframe_alignment: {
+				...alignment,
+				quality,
+				recommendation,
+			},
+		};
 	}
 
 	/**
-	 * Get indicator time series (proxy to IndicatorService)
-	 * Used by StatisticalContextService enrichers
-	 * @param {Object} options - Time series options (includes analysisDate for backtesting)
-	 * @returns {Promise<Object>} Indicator time series
+	 * Generate trading recommendation based on alignment
+	 * @private
 	 */
-	async getIndicatorTimeSeries(options) {
-		return await this.indicatorService.getIndicatorTimeSeries(options);
+	_generateRecommendation(alignment) {
+		const { alignment_score, dominant_direction, conflicts } = alignment;
+
+		// Check for high-severity conflicts
+		const hasHighConflicts = conflicts.some((c) => c.severity === 'high');
+		const hasModerateConflicts = conflicts.some((c) => c.severity === 'moderate');
+
+		let action = 'WAIT';
+		let confidence = 0.5;
+		let reasoning = '';
+
+		if (hasHighConflicts) {
+			action = 'WAIT';
+			confidence = 0.3;
+			reasoning = 'Major timeframe conflicts detected - wait for alignment';
+		} else if (alignment_score >= 0.8 && dominant_direction !== 'neutral') {
+			action = `TRADE_${dominant_direction.toUpperCase()}`;
+			confidence = alignment_score;
+			reasoning = `Strong ${dominant_direction} alignment across timeframes`;
+		} else if (alignment_score >= 0.7 && dominant_direction !== 'neutral' && !hasModerateConflicts) {
+			action = `PREPARE_${dominant_direction.toUpperCase()}`;
+			confidence = alignment_score * 0.9;
+			reasoning = `Good ${dominant_direction} alignment - wait for entry confirmation`;
+		} else if (alignment_score >= 0.6) {
+			action = 'CAUTION';
+			confidence = alignment_score * 0.8;
+			reasoning = 'Moderate alignment - reduce position size or wait';
+		} else {
+			action = 'WAIT';
+			confidence = 0.4;
+			reasoning = 'Weak alignment or unclear direction';
+		}
+
+		return {
+			action,
+			confidence: Math.round(confidence * 100) / 100,
+			reasoning,
+			conflicts_summary: this._summarizeConflicts(conflicts),
+		};
 	}
 
-	// ========== MARKET ANALYSIS METHODS ==========
+	/**
+	 * Summarize conflicts for recommendation
+	 * @private
+	 */
+	_summarizeConflicts(conflicts) {
+		if (conflicts.length === 0) return 'No conflicts detected';
+
+		const bySeverity = {
+			high: conflicts.filter((c) => c.severity === 'high').length,
+			moderate: conflicts.filter((c) => c.severity === 'moderate').length,
+			low: conflicts.filter((c) => c.severity === 'low').length,
+		};
+
+		const parts = [];
+		if (bySeverity.high > 0) parts.push(`${bySeverity.high} high`);
+		if (bySeverity.moderate > 0) parts.push(`${bySeverity.moderate} moderate`);
+		if (bySeverity.low > 0) parts.push(`${bySeverity.low} low`);
+
+		return parts.length > 0 ? `${parts.join(', ')} severity conflict(s)` : 'Minor conflicts';
+	}
+
+	/**
+	 * Assess overall alignment quality
+	 * @private
+	 */
+	_assessAlignmentQuality(alignment) {
+		const { alignment_score, conflicts } = alignment;
+
+		const hasHighConflicts = conflicts.some((c) => c.severity === 'high');
+		const hasModerateConflicts = conflicts.some((c) => c.severity === 'moderate');
+
+		if (hasHighConflicts) return 'poor';
+		if (alignment_score >= 0.85) return 'excellent';
+		if (alignment_score >= 0.75 && !hasModerateConflicts) return 'good';
+		if (alignment_score >= 0.6) return 'fair';
+		return 'poor';
+	}
 
 	/**
 	 * Generate complete market analysis with trading context
-	 * Orchestrates StatisticalContextService and TradingContextService
-	 * @param {Object} options - { symbol, timeframes, count, analysisDate }
-	 * @returns {Promise<Object>} Complete analysis with statistical context and trading decisions
+	 * This is the main comprehensive method that combines all analysis
+	 * @param {Object} params - { symbol, timeframes, count, analysisDate }
+	 * @returns {Promise<Object>} - Complete analysis with trading context
 	 */
-	async generateEnrichedContext(options) {
-		const { symbol, timeframes = ['1h'], count = 200, analysisDate } = options;
+	async generateCompleteAnalysis({ symbol, timeframes, count = 200, analysisDate }) {
+		// Generate market analysis
+		const marketAnalysis = await this.generateMarketAnalysis({ symbol, timeframes, count, analysisDate });
 
-		// Step 1: Generate statistical context (indicators, patterns, alignment)
-		const statisticalContext = await this.statisticalContext.generateFullContext({
-			symbol,
-			timeframes,
-			count,
-			analysisDate
-		});
+		// Generate trading context
+		const tradingContext = this.tradingContextService.generate(marketAnalysis);
 
-		// Step 2: Generate trading context from statistical analysis
-		const tradingContext = this.tradingContext.generate(statisticalContext);
-
-		// Step 3: Consolidate results
 		return {
-			...statisticalContext,
-			trading_context: tradingContext
+			...marketAnalysis,
+			trading_context: tradingContext,
 		};
 	}
 
 	/**
-	 * Generate statistical context only (no trading decisions)
-	 * @param {Object} options - { symbol, timeframes, count, analysisDate }
-	 * @returns {Promise<Object>} Statistical context without trading decisions
+	 * Detect market regime for a single symbol and timeframe
+	 * Proxy method for RegimeDetectionService
+	 * @param {Object} params - { symbol, timeframe, count, analysisDate }
+	 * @returns {Promise<Object>} - Regime detection result
 	 */
-	async generateStatisticalContext(options) {
-		const { symbol, timeframes = ['1h'], count = 200, analysisDate } = options;
-		return await this.statisticalContext.generateFullContext({
-			symbol,
-			timeframes,
-			count,
-			analysisDate
-		});
+	async detectRegime({ symbol, timeframe = '1h', count = 200, analysisDate }) {
+		return await this.regimeDetectionService.detectRegime({ symbol, timeframe, count, analysisDate });
 	}
 
 	/**
-	 * Generate trading context from existing statistical context
-	 * @param {Object} statisticalContext - Statistical context from generateStatisticalContext
-	 * @returns {Object} Trading decisions and recommendations
+	 * Generate enriched statistical context (legacy method name)
+	 * Alias for generateMarketAnalysis for backward compatibility
+	 * @param {Object} params - { symbol, timeframes, count, analysisDate }
+	 * @returns {Promise<Object>}
 	 */
-	generateTradingContext(statisticalContext) {
-		return this.tradingContext.generate(statisticalContext);
+	async generateEnrichedContext({ symbol, timeframes, count = 200, analysisDate }) {
+		return await this.generateMarketAnalysis({ symbol, timeframes, count, analysisDate });
 	}
 
-	async quickMultiTimeframeCheck(options) {
-		const { symbol, timeframes = ['1d', '4h', '1h'] } = options;
-
-		const regimePromises = timeframes.map(async (tf) => {
-			try {
-				const regime = await this.detectRegime({ symbol, timeframe: tf, count: 100 });
-				return { timeframe: tf, regime: regime.regime, confidence: regime.confidence };
-			} catch (error) {
-				return { timeframe: tf, error: error.message };
-			}
-		});
-
-		const results = await Promise.all(regimePromises);
-		const regimes = {};
-		for (const result of results) regimes[result.timeframe] = result.error ? { error: result.error } : { regime: result.regime, confidence: result.confidence };
-
-		const regimeValues = results.filter((r) => r.regime).map((r) => r.regime);
-
-		const bullishCount = regimeValues.filter((r) => r.includes('bullish')).length;
-		const bearishCount = regimeValues.filter((r) => r.includes('bearish')).length;
-		const rangingCount = regimeValues.filter((r) => r.startsWith('range_')).length;
-		const neutralCount = regimeValues.filter((r) => r.includes('neutral')).length;
-		const totalRegimes = regimeValues.length;
-
-		// Calculate alignment: if all trending/breakout regimes agree on direction, score is high
-		// If most are ranging/neutral, alignment is moderate based on consistency
-		let alignmentScore = 0;
-		if (totalRegimes > 0) {
-			const trendingCount = bullishCount + bearishCount;
-
-			if (trendingCount > 0)
-				// If we have trending regimes, score based on directional agreement
-				alignmentScore = Math.max(bullishCount, bearishCount) / totalRegimes;
-			// If all regimes are ranging/neutral, score based on consistency
-			else alignmentScore = Math.max(rangingCount, neutralCount) / totalRegimes;
-		}
-
-		let quality = 'poor';
-		if (alignmentScore >= 0.8) quality = 'perfect';
-		else if (alignmentScore >= 0.6) quality = 'good';
-		else if (alignmentScore >= 0.4) quality = 'mixed';
-
-		// Determine dominant direction
-		let dominantDirection = 'neutral';
-		if (bullishCount > bearishCount && bullishCount > rangingCount) 
-			dominantDirection = 'bullish';
-		 else if (bearishCount > bullishCount && bearishCount > rangingCount) 
-			dominantDirection = 'bearish';
-		 else if (rangingCount > 0) 
-			dominantDirection = 'ranging';
-
-		return {
+	/**
+	 * Quick multi-timeframe check for rapid alignment assessment
+	 * Lighter version with fewer bars for faster response
+	 * @param {Object} params - { symbol, timeframes }
+	 * @returns {Promise<Object>}
+	 */
+	async quickMultiTimeframeCheck({ symbol, timeframes }) {
+		const marketAnalysis = await this.generateMarketAnalysis({
 			symbol,
 			timeframes,
-			regimes,
+			count: 100, // Reduced for speed
+			analysisDate: null,
+		});
+
+		// Return simplified response
+		return {
+			symbol,
+			timestamp: marketAnalysis.timestamp,
+			timeframes: timeframes.length,
 			alignment: {
-				score: Math.round(alignmentScore * 100) / 100,
-				quality,
-				dominant_direction: dominantDirection,
-				conflicts: bullishCount > 0 && bearishCount > 0,
-				distribution: {
-					bullish: bullishCount,
-					bearish: bearishCount,
-					ranging: rangingCount,
-					neutral: neutralCount,
-				},
+				score: marketAnalysis.multi_timeframe_alignment.alignment_score,
+				direction: marketAnalysis.multi_timeframe_alignment.dominant_direction,
+				quality: marketAnalysis.multi_timeframe_alignment.quality,
+				conflicts: marketAnalysis.multi_timeframe_alignment.conflicts.length,
+				recommendation: marketAnalysis.multi_timeframe_alignment.recommendation.action,
 			},
-			timestamp: new Date().toISOString(),
+			regimes: Object.fromEntries(
+				Object.entries(marketAnalysis.statistical_context.timeframes).map(([tf, ctx]) => [
+					tf,
+					{
+						type: ctx.regime?.type,
+						confidence: ctx.regime?.confidence,
+						interpretation: ctx.regime?.interpretation,
+					},
+				])
+			),
 		};
 	}
-
-	// Unified statistical context service (combines V1 and V2 features)
-	/*
-		this.statisticalContext = new StatisticalContextService({
-			logger: this.logger,
-			dataProvider: this.dataProvider,
-			tradingService: this,
-			indicatorService: this.indicatorService
-		});
-		*/
 }
+
+export default MarketAnalysisService;
