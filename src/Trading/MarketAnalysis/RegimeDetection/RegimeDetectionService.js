@@ -373,7 +373,8 @@ export class RegimeDetectionService {
 			trending_bearish: [signals.adxHigh, signals.erHigh, signals.bear],
 			range_low_vol: [signals.lowVol, signals.erLow],
 			range_high_vol: [signals.highVol, !signals.adxHigh, signals.erLow],
-			range_normal: [!signals.adxHigh],
+			// range_normal: ADX can be high if ER is low (choppy market with volatility)
+			range_normal: [!signals.highVol, !signals.lowVol],
 			breakout_bullish: [signals.highVol, signals.adxHigh, signals.bull],
 			breakout_bearish: [signals.highVol, signals.adxHigh, signals.bear],
 			breakout_neutral: [signals.highVol, signals.adxHigh, signals.neut],

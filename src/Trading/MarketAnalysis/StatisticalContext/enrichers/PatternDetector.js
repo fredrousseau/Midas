@@ -390,6 +390,9 @@ export class PatternDetector {
 					...bars.slice(A.index, B.index).map(b => b.high)
 				);
 
+				// Invalidation should be below the bottoms, not above
+				const invalidationLevel = Math.min(A.price, B.price);
+
 				return {
 					pattern: 'double bottom',
 					type: 'reversal',
@@ -399,7 +402,7 @@ export class PatternDetector {
 					first_bottom: round(A.price, 0),
 					second_bottom: round(B.price, 0),
 					resistance_level: round(resistanceLevel, 0),
-					invalidation: resistanceLevel,
+					invalidation: round(invalidationLevel, 0),
 					status: 'forming'
 				};
 			}
