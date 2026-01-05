@@ -295,9 +295,20 @@ export class RegimeDetectionService {
 		} else {
 			regimeType = 'range';
 
-			rangeType = 'normal';
-			if (atrRatio < thresholds.atrRatio.low) rangeType = 'low_vol';
-			if (atrRatio > thresholds.atrRatio.high) rangeType = 'high_vol';
+			// Differentiate range sub-types based on ADX and volatility
+			// directional: High ADX but low ER (strong moves but choppy/inefficient)
+			// high_vol: High volatility without strong directional bias
+			// low_vol: Low volatility consolidation
+			// normal: Medium volatility, calm range
+			if (adxValue >= thresholds.adx.trending) {
+				rangeType = 'directional';
+			} else if (atrRatio < thresholds.atrRatio.low) {
+				rangeType = 'low_vol';
+			} else if (atrRatio > thresholds.atrRatio.high) {
+				rangeType = 'high_vol';
+			} else {
+				rangeType = 'normal';
+			}
 		}
 
 		/* =====================================================
@@ -373,8 +384,8 @@ export class RegimeDetectionService {
 			trending_bearish: [signals.adxHigh, signals.erHigh, signals.bear],
 			range_low_vol: [signals.lowVol, signals.erLow],
 			range_high_vol: [signals.highVol, !signals.adxHigh, signals.erLow],
-			// range_normal: ADX can be high if ER is low (choppy market with volatility)
-			range_normal: [!signals.highVol, !signals.lowVol],
+			range_directional: [signals.adxHigh, signals.erLow, !signals.highVol],
+			range_normal: [!signals.highVol, !signals.lowVol, !signals.adxHigh],
 			breakout_bullish: [signals.highVol, signals.adxHigh, signals.bull],
 			breakout_bearish: [signals.highVol, signals.adxHigh, signals.bear],
 			breakout_neutral: [signals.highVol, signals.adxHigh, signals.neut],

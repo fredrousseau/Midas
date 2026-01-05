@@ -356,6 +356,7 @@ export class StatisticalContextService {
 			trending_neutral: 'Trending market without clear direction',
 			range_low_vol: 'Low volatility consolidation, potential breakout setup',
 			range_normal: 'Normal ranging market, no clear trend',
+			range_directional: 'Range with strong directional moves but low trend efficiency',
 			range_high_vol: 'High volatility chop, uncertain direction',
 			breakout_bullish: 'Bullish breakout with expanding volatility',
 			breakout_bearish: 'Bearish breakout with expanding volatility',
