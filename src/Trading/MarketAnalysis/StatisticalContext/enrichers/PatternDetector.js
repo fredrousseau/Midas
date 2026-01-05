@@ -27,8 +27,8 @@ export class PatternDetector {
 		const bars = ohlcvData?.bars;
 		if (!bars || bars.length < 30) return null;
 
-		if (!volatilityIndicators?.atr?.value)
-			throw new Error('PatternDetector requires volatilityIndicators.atr.value from VolatilityEnricher');
+		// ATR is required for pattern detection - return null if not available
+		if (!volatilityIndicators?.atr?.value) return null;
 
 		const atr = volatilityIndicators.atr.value;
 		const avgVolume = this._calculateAvgVolume(bars, 20);
