@@ -127,19 +127,16 @@ export class StatisticalContextService {
 		const sortedTFs = this._sortTimeframes(timeframesArray);
 
 		for (const tf of sortedTFs) {
-			try {
-				const tfContext = await this._generateTimeframeContext(symbol, tf, count, higherTFData, analysisDate);
-				contexts[tf] = tfContext;
-				higherTFData[tf] = {
-					timeframe: tf,
-					rsi: tfContext.momentum_indicators?.rsi?.value,
-					macd: tfContext.momentum_indicators?.macd?.macd,
-					atr: tfContext.volatility_indicators?.atr?.value,
-				};
-			} catch (error) {
-				this.logger.error(`Failed to generate context for ${tf}: ${error.message}`);
-				contexts[tf] = { timeframe: tf, error: error.message };
-			}
+			// Strict mode: any error on a timeframe should fail the entire request
+			// This ensures API returns proper error status when timeframe is invalid
+			const tfContext = await this._generateTimeframeContext(symbol, tf, count, higherTFData, analysisDate);
+			contexts[tf] = tfContext;
+			higherTFData[tf] = {
+				timeframe: tf,
+				rsi: tfContext.momentum_indicators?.rsi?.value,
+				macd: tfContext.momentum_indicators?.macd?.macd,
+				atr: tfContext.volatility_indicators?.atr?.value,
+			};
 		}
 
 		const alignment = this._analyzeMultiTimeframeAlignment(contexts);
@@ -273,10 +270,9 @@ export class StatisticalContextService {
 	 * Uses time-based logic instead of hardcoded values
 	 */
 	_getContextDepth(timeframe) {
-		const tf = timeframe.toLowerCase();
-
+		// Don't convert to lowercase - preserve M (month) vs m (minute)
 		// Calculate timeframe in minutes for comparison
-		const timeframeMinutes = this._getTimeframeInMinutes(tf);
+		const timeframeMinutes = this._getTimeframeInMinutes(timeframe);
 
 		// Light context: Daily and above (>= 1440 minutes)
 		if (timeframeMinutes >= 1440) {
@@ -296,8 +292,8 @@ export class StatisticalContextService {
 	 * Convert timeframe to minutes for comparison
 	 */
 	_getTimeframeInMinutes(timeframe) {
-		const tf = timeframe.toLowerCase();
-		const match = tf.match(/^(\d+)([mhdw])$/);
+		// Don't convert to lowercase to preserve M (month) vs m (minute)
+		const match = timeframe.match(/^(\d+)([mhdwM])$/);
 
 		if (!match) return 60; // Default to 1h if invalid format
 
@@ -305,10 +301,11 @@ export class StatisticalContextService {
 		const unit = match[2];
 
 		switch (unit) {
-			case 'm': return value;           // minutes
-			case 'h': return value * 60;      // hours to minutes
-			case 'd': return value * 1440;    // days to minutes
-			case 'w': return value * 10080;   // weeks to minutes
+			case 'm': return value;            // minutes
+			case 'h': return value * 60;       // hours to minutes
+			case 'd': return value * 1440;     // days to minutes (24 * 60)
+			case 'w': return value * 10080;    // weeks to minutes (7 * 24 * 60)
+			case 'M': return value * 43200;    // months to minutes (30 * 24 * 60)
 			default: return 60;
 		}
 	}
@@ -467,11 +464,12 @@ export class StatisticalContextService {
 
 	_assessDataQuality(contexts) {
 		const timeframes = Object.keys(contexts);
-		let errors = 0;
-		for (const tf of timeframes) if (contexts[tf]?.error) errors++;
 		const total = timeframes.length;
-		if (errors === 0) return 'high';
-		if (errors < total / 2) return 'medium';
+
+		// With strict error handling, all contexts should be valid
+		// Quality is based on data completeness rather than error count
+		if (total >= 3) return 'high';
+		if (total >= 2) return 'medium';
 		return 'low';
 	}
 
