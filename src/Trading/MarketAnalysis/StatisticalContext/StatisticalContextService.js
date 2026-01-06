@@ -268,7 +268,9 @@ export class StatisticalContextService {
 					ohlcvData,
 					currentPrice,
 					volatilityIndicators: enriched.volatility_indicators,
-					volumeIndicators: enriched.volume_indicators
+					volumeIndicators: enriched.volume_indicators,
+					momentumIndicators: enriched.momentum_indicators,
+					trendIndicators: enriched.trend_indicators
 				});
 		}
 

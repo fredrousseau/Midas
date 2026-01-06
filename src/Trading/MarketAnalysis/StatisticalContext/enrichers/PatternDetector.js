@@ -21,9 +21,11 @@ export class PatternDetector {
 	 * @param {Object} ohlcvData - OHLCV data with bars array
 	 * @param {number} currentPrice - Current market price
 	 * @param {Object} volatilityIndicators - Pre-calculated volatility indicators from VolatilityEnricher
+	 * @param {Object} momentumIndicators - Momentum indicators (MACD, RSI, etc.)
+	 * @param {Object} trendIndicators - Trend indicators (PSAR, ADX, etc.)
 	 * @returns {Array|null} Array of detected patterns or null
 	 */
-	detect({ ohlcvData, currentPrice, volatilityIndicators }) {
+	detect({ ohlcvData, currentPrice, volatilityIndicators, momentumIndicators, trendIndicators }) {
 		const bars = ohlcvData?.bars;
 		if (!bars || bars.length < 30) return null;
 
@@ -58,6 +60,15 @@ export class PatternDetector {
 				pattern.status = 'confirmed';
 				pattern.confidence = Math.min(0.95, round(pattern.confidence + 0.1, 2));
 				pattern.breakout_confirmed = true;
+			}
+
+			// Add momentum quality assessment
+			if (momentumIndicators || trendIndicators) {
+				const momentumQuality = this._assessMomentumQuality(pattern, momentumIndicators, trendIndicators);
+				pattern.momentum_quality = momentumQuality.quality;
+				if (momentumQuality.warning) {
+					pattern.warning = momentumQuality.warning;
+				}
 			}
 
 			// Add ATR context for risk management
@@ -417,6 +428,69 @@ export class PatternDetector {
 		}
 
 		return null;
+	}
+
+	/**
+	 * Assess momentum quality for a pattern
+	 * Checks if momentum indicators support or contradict the pattern's bias
+	 * @param {Object} pattern - Detected pattern
+	 * @param {Object} momentumIndicators - Momentum indicators (MACD, RSI, etc.)
+	 * @param {Object} trendIndicators - Trend indicators (PSAR, ADX, etc.)
+	 * @returns {Object} Assessment with quality and optional warning
+	 */
+	_assessMomentumQuality(pattern, momentumIndicators, trendIndicators) {
+		// Skip for neutral patterns
+		if (!pattern.bias || pattern.bias === 'neutral') {
+			return { quality: 'neutral' };
+		}
+
+		const isBullishPattern = pattern.bias === 'bullish';
+		const conflictingSignals = [];
+
+		// Check MACD
+		if (momentumIndicators?.macd?.cross) {
+			const macdCross = momentumIndicators.macd.cross;
+			if (isBullishPattern && macdCross === 'bearish') {
+				conflictingSignals.push('MACD bearish');
+			} else if (!isBullishPattern && macdCross === 'bullish') {
+				conflictingSignals.push('MACD bullish');
+			}
+		}
+
+		// Check PSAR
+		if (trendIndicators?.psar?.position) {
+			const psarPosition = trendIndicators.psar.position;
+			if (isBullishPattern && psarPosition.includes('bearish')) {
+				conflictingSignals.push('PSAR bearish');
+			} else if (!isBullishPattern && psarPosition.includes('bullish')) {
+				conflictingSignals.push('PSAR bullish');
+			}
+		}
+
+		// Check RSI trend
+		if (momentumIndicators?.rsi?.trend) {
+			const rsiTrend = momentumIndicators.rsi.trend;
+			if (isBullishPattern && rsiTrend === 'declining') {
+				conflictingSignals.push('RSI weakening');
+			} else if (!isBullishPattern && rsiTrend === 'rising') {
+				conflictingSignals.push('RSI strengthening');
+			}
+		}
+
+		// Determine quality and warning
+		if (conflictingSignals.length === 0) {
+			return { quality: 'strong' };
+		} else if (conflictingSignals.length === 1) {
+			return {
+				quality: 'weakening',
+				warning: `momentum partially conflicts with ${pattern.bias} pattern (${conflictingSignals[0]})`
+			};
+		} else {
+			return {
+				quality: 'contradicting',
+				warning: `momentum conflicts with ${pattern.bias} pattern (${conflictingSignals.join(', ')})`
+			};
+		}
 	}
 }
 
