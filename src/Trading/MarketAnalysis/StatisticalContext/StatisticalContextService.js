@@ -272,6 +272,17 @@ export class StatisticalContextService {
 				});
 		}
 
+		// Add coherence check for medium and full depth contexts
+		if (contextDepth.level !== 'light') {
+			enriched.coherence_check = this._assessCoherence({
+				ema_alignment: enriched.moving_averages?.ema?.alignment,
+				macd_cross: enriched.momentum_indicators?.macd?.cross,
+				psar_position: enriched.trend_indicators?.psar?.position,
+				rsi_trend: enriched.momentum_indicators?.rsi?.trend,
+				regime: enriched.regime?.type
+			});
+		}
+
 		enriched.summary = this._generateSummary(enriched, contextDepth.level);
 
 		return enriched;
@@ -636,6 +647,86 @@ export class StatisticalContextService {
 				bearish: round(bearishScore / totalWeight, 2),
 				neutral: round(neutralScore / totalWeight, 2),
 			},
+		};
+	}
+
+	/**
+	 * Assess coherence between price structure and momentum indicators
+	 * Detects divergences where structure (EMAs) suggests one direction but momentum suggests another
+	 * @param {Object} indicators - Object containing alignment, momentum, and trend indicators
+	 * @returns {Object} Coherence assessment with status, divergences, and interpretation
+	 */
+	_assessCoherence(indicators) {
+		const { ema_alignment, macd_cross, psar_position, rsi_trend, regime } = indicators;
+
+		// Skip if insufficient data
+		if (!ema_alignment) {
+			return {
+				status: 'insufficient_data',
+				divergences: [],
+				interpretation: 'insufficient indicators for coherence check',
+				severity: 'none'
+			};
+		}
+
+		const divergences = [];
+
+		// Determine if EMA structure is bullish or bearish
+		const isBullishStructure = ema_alignment.includes('bullish');
+		const isBearishStructure = ema_alignment.includes('bearish');
+
+		// Check MACD divergence
+		if (macd_cross) {
+			if (isBullishStructure && macd_cross === 'bearish') {
+				divergences.push('macd_bearish');
+			} else if (isBearishStructure && macd_cross === 'bullish') {
+				divergences.push('macd_bullish');
+			}
+		}
+
+		// Check PSAR divergence
+		if (psar_position) {
+			if (isBullishStructure && psar_position.includes('bearish')) {
+				divergences.push('psar_bearish');
+			} else if (isBearishStructure && psar_position.includes('bullish')) {
+				divergences.push('psar_bullish');
+			}
+		}
+
+		// Check RSI trend divergence
+		if (rsi_trend) {
+			if (isBullishStructure && rsi_trend === 'declining') {
+				divergences.push('rsi_weakening');
+			} else if (isBearishStructure && rsi_trend === 'rising') {
+				divergences.push('rsi_strengthening');
+			}
+		}
+
+		// Generate interpretation
+		let interpretation;
+		let severity;
+
+		if (divergences.length === 0) {
+			interpretation = 'aligned (structure and momentum coherent)';
+			severity = 'none';
+		} else if (divergences.length >= 2) {
+			interpretation = `strong divergence (${divergences.join(', ')})`;
+			severity = 'high';
+		} else {
+			interpretation = `mild divergence (${divergences.join(', ')})`;
+			severity = 'medium';
+		}
+
+		// Add context based on regime
+		if (regime && regime.includes('range') && divergences.length > 0) {
+			interpretation += ' - common in ranging markets';
+		}
+
+		return {
+			status: divergences.length === 0 ? 'coherent' : 'diverging',
+			divergences,
+			interpretation,
+			severity
 		};
 	}
 }
