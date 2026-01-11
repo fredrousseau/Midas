@@ -16,8 +16,7 @@
 export const STATISTICAL_PERIODS = {
 	short: 20,    // Short-term context (~20 bars)
 	medium: 50,   // Medium-term context (~50 bars)
-	long: 90,     // Long-term context (~90 bars)
-	veryLong: 200 // Very long-term for deep historical analysis
+	long: 90      // Long-term context (max used for anomaly detection)
 };
 
 /**
@@ -37,7 +36,7 @@ export const TREND_PERIODS = {
  */
 export const PATTERN_PERIODS = {
 	swingLookback: 30,     // Bars to look back for swing points
-	structureLookback: 60, // Bars to analyze price structure
+	structureLookback: 80, // Bars to analyze price structure (max used in PatternDetector)
 	microPattern: 10,      // Recent bars for micro patterns
 	recentAction: 3        // Most recent bars for immediate action
 };
@@ -92,6 +91,10 @@ export function getLookbackPeriod(category, type) {
  * Validation: Ensure lookback periods don't exceed bar counts
  * @param {Object} barCounts - Object with timeframe bar counts
  * @returns {Array<string>} Array of warning messages
+ *
+ * Note: Only validates medium/full context timeframes (< 1d).
+ * Light context timeframes (1d, 1w, 1M) only use basic price action
+ * and don't require deep lookback periods.
  */
 export function validateLookbackPeriods(barCounts) {
 	const warnings = [];
@@ -105,8 +108,15 @@ export function validateLookbackPeriods(barCounts) {
 		...Object.values(SUPPORT_RESISTANCE_PERIODS)
 	);
 
-	// Check each timeframe
-	for (const [tf, count] of Object.entries(barCounts)) {
+	// Only validate medium/full context timeframes
+	// Light context (1d, 1w, 1M) only uses basic price action
+	const mediumFullTimeframes = ['5m', '15m', '30m', '1h', '4h'];
+
+	// Check each timeframe that needs deep lookback
+	for (const tf of mediumFullTimeframes) {
+		const count = barCounts[tf];
+		if (!count) continue;
+
 		if (count < maxLookback) {
 			warnings.push(
 				`WARNING: ${tf} has ${count} bars but max lookback period is ${maxLookback}. ` +
