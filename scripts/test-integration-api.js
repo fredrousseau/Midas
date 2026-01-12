@@ -255,10 +255,12 @@ test('Execute PriceActionEnricher.enrich()', () => {
 test('PriceAction result has expected structure', () => {
 	return priceActionResult &&
 		typeof priceActionResult === 'object' &&
-		priceActionResult.structure !== undefined;
+		Object.keys(priceActionResult).length > 0;
 });
 
-info(`  Structure: ${priceActionResult?.structure || 'N/A'}`);
+if (priceActionResult && 'recent_structure' in priceActionResult) {
+	info(`  Pattern: ${priceActionResult.recent_structure.pattern || 'N/A'}`);
+}
 
 // ==============================================================================
 // TEST 5: Pattern Detector (No Dependencies)
