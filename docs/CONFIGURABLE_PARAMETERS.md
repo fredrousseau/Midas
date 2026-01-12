@@ -48,6 +48,7 @@ Documentation exhaustive de tous les paramètres, pondérations et seuils utilis
 9. [Volume Indicators](#9-volume-indicators)
 10. [Pattern Detector](#10-pattern-detector)
 11. [Bar Counts Adaptatifs](#11-bar-counts-adaptatifs)
+12. [**Lookback Periods (NOUVEAU)**](#12-lookback-periods)
 12. [Recommandations pour Backtesting](#12-recommandations-pour-backtesting)
 
 ---
@@ -1074,3 +1075,605 @@ Pour questions ou suggestions d'amélioration de cette documentation:
 - Proposer des PR avec modifications
 
 **Note:** Ce document doit être mis à jour lors de tout changement de paramètres dans le code source.
+
+---
+
+## 12. LOOKBACK PERIODS
+
+**Fichier:** `src/Trading/MarketAnalysis/config/lookbackPeriods.js`  
+**Date ajout:** 2026-01-11  
+**Total paramètres:** 30
+
+**Description:** Configuration centralisée de toutes les périodes de lookback historique utilisées pour les calculs statistiques, détection de tendances, patterns, et analyse de volume. Remplace 48+ magic numbers hardcodés à travers le codebase.
+
+**Impact:** Ces paramètres déterminent la quantité d'historique utilisée pour chaque calcul. Modifier ces valeurs affecte directement la réactivité vs stabilité des signaux.
+
+---
+
+### 12.1 STATISTICAL_PERIODS
+
+**Total paramètres:** 3  
+**Usage:** Calculs de percentiles, moyennes, ranges typiques, statistiques générales
+
+```javascript
+export const STATISTICAL_PERIODS = {
+    short: 20,    // Court-terme (~20 bars)
+    medium: 50,   // Moyen-terme (~50 bars)
+    long: 90      // Long-terme (max pour anomaly detection)
+};
+```
+
+#### 12.1.1 `short` (20)
+
+**Utilisé dans:**
+- RSI percentile 20 jours (MomentumEnricher)
+- Structure de prix récente (PriceActionEnricher)
+- Divergences EMA (MovingAveragesEnricher)
+- Bandwidth Bollinger Bands récent (VolatilityEnricher)
+- Breakout levels (PriceActionEnricher)
+
+**Impact si augmenté (ex: 25-30):**
+- ➕ Plus stable, moins de faux signaux
+- ➕ Meilleure vision du contexte récent
+- ➖ Plus lent à réagir aux changements
+- ➖ Peut manquer des mouvements rapides
+
+**Impact si diminué (ex: 15):**
+- ➕ Plus réactif aux changements récents
+- ➕ Capture mieux les micro-tendances
+- ➖ Plus sensible au bruit
+- ➖ Plus de faux signaux
+
+**Range recommandé:** 15-30  
+**Priorité backtesting:** 🔴 HAUTE
+
+---
+
+#### 12.1.2 `medium` (50)
+
+**Utilisé dans:**
+- RSI percentile 50 jours (MomentumEnricher)
+- RSI mean et typical range (MomentumEnricher)
+- ATR percentile et mean (VolatilityEnricher)
+- Bollinger Bands width percentile (VolatilityEnricher)
+- OBV percentile (VolumeEnricher)
+
+**Impact si augmenté (ex: 60-70):**
+- ➕ Vision plus large, capture mieux les cycles
+- ➕ Statistiques plus robustes
+- ➖ Moins réactif aux changements récents
+- ➖ Peut être en retard sur les reversals
+
+**Impact si diminué (ex: 30-40):**
+- ➕ Plus adaptatif aux nouvelles conditions
+- ➕ Meilleure détection des changements de régime
+- ➖ Statistiques moins stables
+- ➖ Plus influencé par les anomalies récentes
+
+**Range recommandé:** 40-70  
+**Priorité backtesting:** 🔴 HAUTE
+
+---
+
+#### 12.1.3 `long` (90)
+
+**Utilisé dans:**
+- Détection d'anomalies statistiques (StatisticalContextService)
+- Analyse long-terme des indicateurs
+
+**Impact si augmenté (ex: 100-120):**
+- ➕ Anomalies plus significatives
+- ➕ Meilleure détection des événements exceptionnels
+- ➖ Nécessite plus de données historiques
+- ➖ ⚠️ Attention aux contraintes bar counts!
+
+**Impact si diminué (ex: 60-80):**
+- ➕ Détection plus sensible
+- ➕ Fonctionne avec moins d'historique
+- ➖ Risque de faux positifs
+- ➖ Anomalies moins significatives
+
+**Range recommandé:** 60-120  
+**Contrainte:** MAX 90 pour timeframes 1h/4h (limite bar counts)  
+**Priorité backtesting:** 🟡 MOYENNE
+
+---
+
+### 12.2 TREND_PERIODS
+
+**Total paramètres:** 4  
+**Usage:** Détection de tendances, slopes, rate of change
+
+```javascript
+export const TREND_PERIODS = {
+    immediate: 5,   // Tendance immédiate (5 bars)
+    short: 10,      // Tendance court-terme
+    medium: 20,     // Tendance moyen-terme
+    long: 50        // Tendance long-terme
+};
+```
+
+#### 12.2.1 `immediate` (5)
+
+**Utilisé dans:**
+- Rate of change immédiat (StatisticalContextService)
+- Histogram MACD trend (MomentumEnricher)
+- ATR trend analysis (VolatilityEnricher)
+- Candle patterns récents (PriceActionEnricher)
+
+**Impact si augmenté (ex: 7-10):**
+- ➕ Trends plus confirmées
+- ➕ Moins de bruit
+- ➖ Perd la réactivité immédiate
+
+**Impact si diminué (ex: 3):**
+- ➕ Extrêmement réactif
+- ➖ Très sensible au bruit
+- ➖ Beaucoup de faux signaux
+
+**Range recommandé:** 3-10  
+**Priorité backtesting:** 🟢 BASSE (très spécialisé)
+
+---
+
+#### 12.2.2 `short` (10)
+
+**Utilisé dans:**
+- Tendance RSI (MomentumEnricher)
+- Tendance ATR (VolatilityEnricher)
+- Slopes EMA court-terme (MovingAveragesEnricher)
+- Detection peaks RSI/prix (MomentumEnricher)
+- Micro patterns (PriceActionEnricher)
+
+**Impact si augmenté (ex: 12-15):**
+- ➕ Tendances plus stables
+- ➕ Meilleur filtrage du bruit
+- ➖ Moins réactif
+
+**Impact si diminué (ex: 7-8):**
+- ➕ Très réactif
+- ➕ Capture les micro-mouvements
+- ➖ Plus de faux signaux
+
+**Range recommandé:** 7-15  
+**Priorité backtesting:** 🔴 HAUTE
+
+---
+
+#### 12.2.3 `medium` (20)
+
+**Utilisé dans:**
+- Tendance prix principale (StatisticalContextService)
+- Divergences RSI/MACD (MomentumEnricher)
+- Slopes EMA moyen-terme (MovingAveragesEnricher)
+- Rate of change 10 bars (StatisticalContextService)
+
+**Impact si augmenté (ex: 25-30):**
+- ➕ Capture la tendance principale sans bruit
+- ➕ Divergences plus significatives
+- ➖ Détection plus tardive
+
+**Impact si diminué (ex: 15):**
+- ➕ Plus réactif aux changements
+- ➖ Peut confondre corrections et reversals
+
+**Range recommandé:** 15-30  
+**Priorité backtesting:** 🔴 HAUTE
+
+---
+
+#### 12.2.4 `long` (50)
+
+**Utilisé dans:**
+- Tendances long-terme
+- Support/resistance identification
+
+**Impact si augmenté (ex: 60-100):**
+- ➕ Tendance primaire très stable
+- ➖ Très lent à réagir
+
+**Impact si diminué (ex: 30-40):**
+- ➕ Plus adaptatif
+- ➖ Peut perdre la vue d'ensemble
+
+**Range recommandé:** 40-100  
+**Priorité backtesting:** 🟡 MOYENNE
+
+---
+
+### 12.3 PATTERN_PERIODS
+
+**Total paramètres:** 14  
+**Usage:** Détection de patterns chartistes (flags, triangles, H&S, etc.)
+
+```javascript
+export const PATTERN_PERIODS = {
+    // Base patterns
+    swingLookback: 30,
+    structureLookback: 80,
+    microPattern: 10,
+    recentAction: 3,
+    
+    // Pattern-specific
+    minimumBars: 30,
+    range24h: 24,
+    
+    // Flag patterns
+    flagRecent: 30,
+    poleMinLength: 15,
+    poleSearchStart: 15,
+    poleSearchEnd: 8,
+    flagMinLength: 5,
+    flagMaxLength: 15,
+    
+    // Swing detection
+    triangleSwingBars: 60,
+    wedgeSwingBars: 60,
+    headShouldersSwingBars: 80,
+    doublePatternBars: 50
+};
+```
+
+#### 12.3.1 `swingLookback` (30)
+
+**Utilisé dans:** Identification des swing points (PriceActionEnricher)
+
+**Impact:** Détermine combien de bars en arrière chercher pour les points de swing.
+
+**Range recommandé:** 20-50  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.3.2 `structureLookback` (80)
+
+**Utilisé dans:** Analyse de structure de prix (PriceActionEnricher, PatternDetector)
+
+**Impact:** Plus élevé = patterns plus larges détectés
+
+**Range recommandé:** 60-100  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.3.3 `microPattern` (10)
+
+**Utilisé dans:** 
+- Micro structure (PriceActionEnricher)
+- Basic price action (StatisticalContextService)
+- Recent highs/lows (PriceActionEnricher)
+
+**Impact:** Patterns très court-terme, très sensible au bruit si trop bas.
+
+**Range recommandé:** 8-15  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.3.4 `recentAction` (3)
+
+**Utilisé dans:** Actions immédiates, dernières barres
+
+**Impact:** Très spécialisé, rarement modifié
+
+**Range recommandé:** 2-5  
+**Priorité:** 🟢 BASSE
+
+---
+
+#### 12.3.5 Flag Pattern Parameters (6 paramètres)
+
+**`flagRecent` (30):** Bars pour détecter flag  
+**`poleMinLength` (15):** Longueur min du pole  
+**`poleSearchStart` (15):** Début recherche pole  
+**`poleSearchEnd` (8):** Fin recherche pole  
+**`flagMinLength` (5):** Durée min du flag  
+**`flagMaxLength` (15):** Durée max du flag  
+
+**Impact global:** Détermine la sensibilité de détection des bull/bear flags.
+
+**Si valeurs plus strictes (augmenter min, diminuer max):**
+- ➕ Flags plus fiables
+- ➖ Moins de détections
+
+**Si valeurs plus permissives:**
+- ➕ Plus de détections
+- ➖ Plus de faux positifs
+
+**Range recommandé:**
+- flagMinLength: 3-7
+- flagMaxLength: 12-20
+- poleMinLength: 10-20
+
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.3.6 Swing Detection Parameters (4 paramètres)
+
+**`triangleSwingBars` (60):** Bars pour swings de triangles  
+**`wedgeSwingBars` (60):** Bars pour swings de wedges  
+**`headShouldersSwingBars` (80):** Bars pour H&S  
+**`doublePatternBars` (50):** Bars pour double top/bottom  
+
+**Impact:** Plus de bars = patterns plus larges, plus significatifs mais moins fréquents.
+
+**Range recommandé:** 40-100  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+### 12.4 PATTERN_ATR_MULTIPLIERS
+
+**Total paramètres:** 2  
+**Usage:** Multiplicateurs ATR pour déterminer la significativité des swings
+
+```javascript
+export const PATTERN_ATR_MULTIPLIERS = {
+    normalSwing: 1.3,      // Swings standards
+    significantSwing: 1.5  // Swings significatifs (H&S)
+};
+```
+
+#### 12.4.1 `normalSwing` (1.3)
+
+**Utilisé dans:** Triangles, wedges, double tops/bottoms
+
+**Impact si augmenté (ex: 1.5-1.7):**
+- ➕ Swings plus significatifs uniquement
+- ➕ Moins de faux patterns
+- ➖ Moins de détections
+
+**Impact si diminué (ex: 1.0-1.2):**
+- ➕ Plus de patterns détectés
+- ➖ Plus de faux positifs
+
+**Range recommandé:** 1.0-1.7  
+**Priorité:** 🔴 HAUTE
+
+---
+
+#### 12.4.2 `significantSwing` (1.5)
+
+**Utilisé dans:** Head & Shoulders (patterns majeurs)
+
+**Impact:** Similaire à normalSwing mais pour patterns plus importants.
+
+**Range recommandé:** 1.3-2.0  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+### 12.5 VOLUME_PERIODS
+
+**Total paramètres:** 4  
+**Usage:** Analyse de volume, OBV, divergences prix-volume
+
+```javascript
+export const VOLUME_PERIODS = {
+    average: 20,        // Moyenne mobile volume
+    recentBars: 3,      // Barres récentes à analyser
+    obvTrend: 20,       // Tendance OBV
+    divergence: 10      // Divergence prix-volume
+};
+```
+
+#### 12.5.1 `average` (20)
+
+**Utilisé dans:** 
+- Calcul volume moyen (VolumeEnricher)
+- Ratio volume actuel vs moyen
+
+**Impact:** Définit ce qui est considéré "volume normal".
+
+**Range recommandé:** 15-30  
+**Priorité:** 🔴 HAUTE
+
+---
+
+#### 12.5.2 `recentBars` (3)
+
+**Utilisé dans:** Analyse des barres de volume les plus récentes
+
+**Impact:** Très court-terme, capture activité immédiate.
+
+**⚠️ NOTE:** Avant refactoring, le code utilisait 10! Maintenant corrigé à 3 (cohérent).
+
+**Range recommandé:** 3-5  
+**Priorité:** 🟢 BASSE
+
+---
+
+#### 12.5.3 `obvTrend` (20)
+
+**Utilisé dans:** Détection de tendance OBV
+
+**Impact:** Plus élevé = trend OBV plus stable.
+
+**Range recommandé:** 15-30  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.5.4 `divergence` (10)
+
+**Utilisé dans:** Détection divergence prix-OBV
+
+**Impact:** Fenêtre pour comparer prix vs OBV.
+
+**⚠️ NOTE:** Avant refactoring, le code utilisait 20! Maintenant corrigé à 10 (cohérent).
+
+**Range recommandé:** 10-20  
+**Priorité:** 🔴 HAUTE (divergences critiques)
+
+---
+
+### 12.6 SUPPORT_RESISTANCE_PERIODS
+
+**Total paramètres:** 3  
+**Usage:** Identification S/R, clusters, validation
+
+```javascript
+export const SUPPORT_RESISTANCE_PERIODS = {
+    lookback: 50,           // Historique S/R
+    clusterWindow: 30,      // Fenêtre clusters
+    validationBars: 10      // Validation niveau
+};
+```
+
+#### 12.6.1 `lookback` (50)
+
+**Utilisé dans:**
+- Identification S/R (StatisticalContextService)
+- Swing points (PriceActionEnricher)
+
+**Impact:** Plus élevé = S/R basés sur historique plus long, plus robustes.
+
+**Range recommandé:** 40-80  
+**Priorité:** 🔴 HAUTE
+
+---
+
+#### 12.6.2 `clusterWindow` (30)
+
+**Utilisé dans:** Identification de zones de S/R (clusters de niveaux)
+
+**Impact:** Fenêtre pour regrouper les niveaux proches.
+
+**Range recommandé:** 20-50  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+#### 12.6.3 `validationBars` (10)
+
+**Utilisé dans:** Validation qu'un niveau S/R tient
+
+**Impact:** Plus élevé = niveau doit tenir plus longtemps pour être validé.
+
+**Range recommandé:** 5-15  
+**Priorité:** 🟡 MOYENNE
+
+---
+
+### 12.7 Validation et Contraintes
+
+**Contrainte critique:** `max(all lookback periods) ≤ min(INDICATOR_BAR_COUNTS for medium/full contexts)`
+
+**Actuellement:**
+- Max lookback: 90 (STATISTICAL_PERIODS.long)
+- Min bar count (1h/4h): 150
+- ✅ Validation: 90 < 150 OK
+
+**⚠️ Si tu augmentes un lookback period > 150:**
+- ❌ Tests échoueront
+- ❌ Erreurs à runtime pour 1h/4h timeframes
+- ✅ Solution: Augmenter INDICATOR_BAR_COUNTS ou réduire lookback
+
+**Script de validation:**
+```bash
+node scripts/validate-critical-fixes.js
+```
+
+---
+
+### 12.8 Guide d'Optimisation
+
+#### Stratégie Scalping (Haute Fréquence)
+
+```javascript
+// Réduis tous les lookbacks pour plus de réactivité
+STATISTICAL_PERIODS = { short: 10, medium: 30, long: 60 };
+TREND_PERIODS = { immediate: 3, short: 7, medium: 15, long: 30 };
+VOLUME_PERIODS = { average: 15, recentBars: 3, obvTrend: 15, divergence: 10 };
+```
+
+**Résultat:** Signaux rapides, plus de trades, plus de bruit
+
+---
+
+#### Stratégie Position (Long-terme)
+
+```javascript
+// Augmente lookbacks pour stabilité
+STATISTICAL_PERIODS = { short: 30, medium: 70, long: 120 };
+TREND_PERIODS = { immediate: 10, short: 20, medium: 40, long: 100 };
+VOLUME_PERIODS = { average: 30, recentBars: 5, obvTrend: 30, divergence: 20 };
+```
+
+**Résultat:** Signaux stables, moins de trades, moins de faux signaux
+
+---
+
+#### Stratégie Swing (Équilibrée)
+
+```javascript
+// Valeurs actuelles = bon équilibre
+// Optimiser individuellement selon backtests
+```
+
+---
+
+### 12.9 Priorités de Backtesting
+
+**Paramètres à tester EN PREMIER (impact le plus élevé):**
+
+1. 🔴 `STATISTICAL_PERIODS.short` (20)
+2. 🔴 `STATISTICAL_PERIODS.medium` (50)
+3. 🔴 `TREND_PERIODS.short` (10)
+4. 🔴 `TREND_PERIODS.medium` (20)
+5. 🔴 `VOLUME_PERIODS.average` (20)
+6. 🔴 `VOLUME_PERIODS.divergence` (10)
+7. 🔴 `SUPPORT_RESISTANCE_PERIODS.lookback` (50)
+8. 🔴 `PATTERN_ATR_MULTIPLIERS.normalSwing` (1.3)
+
+**Paramètres secondaires:**
+
+9. 🟡 `STATISTICAL_PERIODS.long` (90)
+10. 🟡 `TREND_PERIODS.long` (50)
+11. 🟡 Tous les PATTERN_PERIODS
+
+**Paramètres spécialisés (tester si focus sur patterns):**
+
+12. 🟢 `TREND_PERIODS.immediate` (5)
+13. 🟢 `PATTERN_PERIODS.recentAction` (3)
+14. 🟢 `VOLUME_PERIODS.recentBars` (3)
+
+---
+
+### 12.10 Exemples de Backtesting Paramétrique
+
+#### Exemple 1: Grid Search sur STATISTICAL_PERIODS.short
+
+```javascript
+const results = [];
+for (let short = 15; short <= 30; short += 5) {
+    STATISTICAL_PERIODS.short = short;
+    const performance = runBacktest(startDate, endDate);
+    results.push({ short, sharpe: performance.sharpe, trades: performance.trades });
+}
+// Analyser results pour trouver optimal
+```
+
+#### Exemple 2: Optimisation Multi-Paramètres
+
+```javascript
+const configs = [
+    { short: 15, medium: 40, trendShort: 8 },
+    { short: 20, medium: 50, trendShort: 10 },  // Actuel
+    { short: 25, medium: 60, trendShort: 12 },
+];
+
+for (const cfg of configs) {
+    STATISTICAL_PERIODS.short = cfg.short;
+    STATISTICAL_PERIODS.medium = cfg.medium;
+    TREND_PERIODS.short = cfg.trendShort;
+    // Run backtest et comparer
+}
+```
+
+---
+
+**Total nouveaux paramètres optimisables:** 30  
+**Total paramètres système (avec bar counts):** 62+  
+**Fichier configuration:** `src/Trading/MarketAnalysis/config/lookbackPeriods.js`

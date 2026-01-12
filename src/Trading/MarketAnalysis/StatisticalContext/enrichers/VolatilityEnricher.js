@@ -68,7 +68,7 @@ export class VolatilityEnricher {
 	 * Get indicator series
 	 * @throws {Error} If indicator calculation fails
 	 */
-	async _getIndicatorSafe
+	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, analysisDate) {
 		const bars = this._getAdaptiveBarCount(timeframe);
 		const series = await indicatorService.getIndicatorTimeSeries({
 			symbol,
