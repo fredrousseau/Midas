@@ -80,8 +80,18 @@ window.runBacktest = async function() {
         });
 
         if (!response.ok) {
-            const error = await response.json();
-            throw new Error(error.error || 'Erreur lors du backtest');
+            let errorMessage = 'Erreur lors du backtest';
+            try {
+                const errorData = await response.json();
+                console.error('Backend error response:', errorData);
+                errorMessage = errorData.error || errorData.message || JSON.stringify(errorData);
+            } catch (parseError) {
+                // Response wasn't JSON, try to get text
+                const textError = await response.text();
+                errorMessage = textError || `HTTP ${response.status}: ${response.statusText}`;
+                console.error('Backend error (non-JSON):', errorMessage);
+            }
+            throw new Error(errorMessage);
         }
 
         const results = await response.json();
