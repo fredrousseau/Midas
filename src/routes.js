@@ -360,6 +360,66 @@ export function registerRoutes(parameters) {
 			});
 		})
 	);
+
+	// ========== Channel : API / Type : BACKTESTING ==========
+
+	app.post(
+		'/api/v1/backtest',
+		asyncHandler(async (req) => {
+			const { symbol, startDate, endDate, timeframe, strategy } = req.body;
+			logger.info(`POST /api/v1/backtest - Running backtest for ${symbol} from ${startDate} to ${endDate}`);
+
+			// Validation
+			if (!symbol) {
+				const error = new Error('symbol is required');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			if (!startDate || !endDate) {
+				const error = new Error('startDate and endDate are required');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			// Import BacktestingService dynamically
+			const { BacktestingService } = await import('./Trading/Backtesting/BacktestingService.js');
+
+			const backtestingService = new BacktestingService({
+				logger,
+				marketDataService,
+				indicatorService
+			});
+
+			const start = new Date(startDate);
+			const end = new Date(endDate);
+
+			// Validate dates
+			if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+				const error = new Error('Invalid date format. Use ISO 8601 format (YYYY-MM-DD)');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			if (start >= end) {
+				const error = new Error('startDate must be before endDate');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			// Run backtest
+			const results = await backtestingService.runBacktest({
+				symbol,
+				startDate: start,
+				endDate: end,
+				timeframe: timeframe || '1h',
+				strategy: strategy || {}
+			});
+
+			return results;
+		})
+	);
+
 	// ========== Channel : API / Type : UTILITY ==========
 
 	app.get(

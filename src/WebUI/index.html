@@ -85,6 +85,25 @@
             background: rgba(239, 83, 80, 0.1);
         }
 
+        .nav-link-btn {
+            background: rgba(41, 98, 255, 0.1);
+            border: 1px solid #2962ff;
+            color: #2962ff;
+            padding: 4px 12px;
+            font-size: 11px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+            margin-right: 8px;
+        }
+
+        .nav-link-btn:hover {
+            background: #2962ff;
+            color: white;
+        }
+
         .indicator-stats {
             display: flex;
             gap: 15px;
@@ -810,7 +829,10 @@
             <div class="sidebar-header">
                 <div class="sidebar-title-row">
                     <div class="sidebar-title">Indicateurs</div>
-                    <button class="logout-btn" id="logoutBtn" style="display: none;">Se déconnecter</button>
+                    <div>
+                        <a href="/backtest.html" class="nav-link-btn">🔬 Backtesting</a>
+                        <button class="logout-btn" id="logoutBtn" style="display: none;">Se déconnecter</button>
+                    </div>
                 </div>
                 <div class="indicator-stats">
                     <div class="stat-item">
