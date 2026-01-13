@@ -42,7 +42,20 @@ export class BacktestingService {
 	async runBacktest(params) {
 		const { symbol, startDate, endDate, timeframe = '1h', strategy = {}, parameters = {} } = params;
 
-		this.logger.info(`Starting backtest for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+		// Validate backtest period - limit to 90 days maximum to prevent excessive resource usage
+		const MAX_BACKTEST_DAYS = 90;
+		const periodMs = endDate - startDate;
+		const periodDays = periodMs / (1000 * 60 * 60 * 24);
+
+		if (periodDays > MAX_BACKTEST_DAYS) {
+			throw new Error(
+				`Backtest period too long: ${periodDays.toFixed(1)} days. ` +
+				`Maximum allowed: ${MAX_BACKTEST_DAYS} days. ` +
+				`Please reduce the date range.`
+			);
+		}
+
+		this.logger.info(`Starting backtest for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()} (${periodDays.toFixed(1)} days)`);
 
 		// Step 1: Get historical candles for the period
 		const candles = await this._getHistoricalCandles(symbol, timeframe, startDate, endDate);
@@ -141,20 +154,76 @@ export class BacktestingService {
 
 		this.logger.info(`Fetching ~${estimatedCandles} candles for ${timeframe} timeframe`);
 
+		// If too many candles requested, fetch in chunks to avoid hitting limits
+		const MAX_CHUNK_SIZE = 3000; // Leave margin below the 5000 maxDataPoints limit
+
+		if (estimatedCandles <= MAX_CHUNK_SIZE) {
+			// Single request is fine
+			return await this._fetchCandleChunk(symbol, timeframe, startDate, endDate, estimatedCandles + 100);
+		} else {
+			// Need to fetch in chunks
+			this.logger.info(`Large dataset (${estimatedCandles} candles) - fetching in chunks`);
+			const allCandles = [];
+			let currentStart = new Date(startDate);
+
+			while (currentStart < endDate) {
+				// Calculate chunk end date (try to get MAX_CHUNK_SIZE candles)
+				const chunkEndMs = Math.min(
+					currentStart.getTime() + (MAX_CHUNK_SIZE * timeframeMs),
+					endDate.getTime()
+				);
+				const chunkEnd = new Date(chunkEndMs);
+
+				this.logger.verbose(`Fetching chunk: ${currentStart.toISOString()} to ${chunkEnd.toISOString()}`);
+
+				const chunkCandles = await this._fetchCandleChunk(symbol, timeframe, currentStart, chunkEnd, MAX_CHUNK_SIZE + 100);
+				allCandles.push(...chunkCandles);
+
+				currentStart = new Date(chunkEnd.getTime() + timeframeMs); // Move to next candle
+			}
+
+			// Filter to exact date range and sort by timestamp
+			const filteredCandles = allCandles
+				.filter((candle) => {
+					const candleDate = new Date(candle.timestamp);
+					return candleDate >= startDate && candleDate <= endDate;
+				})
+				.sort((a, b) => a.timestamp - b.timestamp);
+
+			// Remove duplicates that might occur at chunk boundaries
+			const uniqueCandles = [];
+			const seenTimestamps = new Set();
+
+			for (const candle of filteredCandles) {
+				if (!seenTimestamps.has(candle.timestamp)) {
+					uniqueCandles.push(candle);
+					seenTimestamps.add(candle.timestamp);
+				}
+			}
+
+			this.logger.info(`Fetched ${uniqueCandles.length} unique candles total`);
+			return uniqueCandles;
+		}
+	}
+
+	/**
+	 * Fetch a chunk of candle data
+	 * @private
+	 */
+	async _fetchCandleChunk(symbol, timeframe, startDate, endDate, count) {
 		// Get OHLCV data using MarketDataService
-		// This goes through DataProvider which handles Redis caching
 		const ohlcvData = await this.marketDataService.loadOHLCV({
 			symbol,
 			timeframe,
-			count: estimatedCandles + 100, // Extra margin for warmup
-			to: endDate.getTime(), // Convert Date to timestamp in milliseconds
+			count: Math.min(count, 4000), // Cap at 4000 to stay well below 5000 limit
+			to: endDate.getTime(),
 		});
 
-		if (!ohlcvData || !ohlcvData.data || ohlcvData.data.length === 0) throw new Error('No OHLCV data returned from market data service');
+		if (!ohlcvData || !ohlcvData.data || ohlcvData.data.length === 0) {
+			return []; // Return empty array instead of throwing for chunked requests
+		}
 
-		// MarketDataService returns { data: [...], bars: undefined }
-		// Each data item has { timestamp, values: { open, high, low, close, volume } }
-		// We need to convert to flat structure for backtesting
+		// Convert to flat structure for backtesting
 		const bars = ohlcvData.data.map((bar) => ({
 			timestamp: bar.timestamp,
 			open: bar.values.open,
@@ -164,7 +233,7 @@ export class BacktestingService {
 			volume: bar.values.volume,
 		}));
 
-		// Filter candles to exact date range
+		// Filter candles to chunk date range
 		const filteredCandles = bars.filter((candle) => {
 			const candleDate = new Date(candle.timestamp);
 			return candleDate >= startDate && candleDate <= endDate;

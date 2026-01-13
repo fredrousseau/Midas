@@ -30,7 +30,7 @@ export const OHLCV_BAR_COUNTS = {
 	'4h': 200,
 	'1d': 150,
 	'1w': 100,
-	'1M': 60,
+	'1M': 100,  // Increased from 60 to provide 50+ bars margin for indicators
 };
 
 /**
