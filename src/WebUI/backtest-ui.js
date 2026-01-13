@@ -6,29 +6,12 @@
 // Global state
 let currentResults = null;
 
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', () => {
-    initializeDates();
-});
-
-/**
- * Initialize date inputs with default values
- */
-function initializeDates() {
-    const endDate = new Date();
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - 30); // 30 days ago
-
-    document.getElementById('endDate').valueAsDate = endDate;
-    document.getElementById('startDate').valueAsDate = startDate;
-}
-
 /**
  * Run backtest
  */
 window.runBacktest = async function() {
-    const symbol = document.getElementById('symbol').value.trim();
-    const timeframe = document.getElementById('timeframe').value;
+    const symbol = document.getElementById('btSymbol').value.trim();
+    const timeframe = document.getElementById('btTimeframe').value;
     const startDate = document.getElementById('startDate').value;
     const endDate = document.getElementById('endDate').value;
     const minConfidence = parseFloat(document.getElementById('minConfidence').value) / 100;
@@ -99,7 +82,10 @@ window.runBacktest = async function() {
             throw new Error(errorMessage);
         }
 
-        const results = await response.json();
+        const response_data = await response.json();
+
+        // Backend returns { success: true, data: { summary, trades, performance, ... } }
+        const results = response_data.data;
         currentResults = results;
 
         showStatus('success', `Backtest terminé: ${results.summary.trades_executed} trades exécutés`);
@@ -327,20 +313,3 @@ window.exportCSV = function() {
     showStatus('success', 'Trades exportés en CSV');
 };
 
-/**
- * Logout
- */
-window.logout = function() {
-    document.cookie = 'webui_auth_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-    window.location.href = '/login.html';
-};
-
-/**
- * Get cookie value
- */
-function getCookie(name) {
-    const value = `; ${document.cookie}`;
-    const parts = value.split(`; ${name}=`);
-    if (parts.length === 2) return parts.pop().split(';').shift();
-    return '';
-}
