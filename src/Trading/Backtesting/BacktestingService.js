@@ -82,7 +82,8 @@ export class BacktestingService {
 
 			try {
 				// Generate complete market analysis at this point in time
-				const analysis = await this.marketAnalysisService.analyze({
+				// Use generateCompleteAnalysis which includes trading_context
+				const analysis = await this.marketAnalysisService.generateCompleteAnalysis({
 					symbol,
 					timeframes: this._getTimeframesForBacktest(timeframe),
 					analysisDate
