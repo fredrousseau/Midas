@@ -384,8 +384,11 @@ export function registerRoutes(parameters) {
 	app.post(
 		'/api/v1/backtest',
 		asyncHandler(async (req) => {
-			const { symbol, startDate, endDate, timeframe, strategy } = req.body;
-			logger.info(`POST /api/v1/backtest - Running backtest for ${symbol} from ${startDate} to ${endDate}`);
+			// Support both 'interval' (new) and 'timeframe' (legacy) parameter names
+			const { symbol, startDate, endDate, interval, timeframe } = req.body;
+			const backtestInterval = interval || timeframe || '1h';
+
+			logger.info(`POST /api/v1/backtest - Running backtest for ${symbol} from ${startDate} to ${endDate} (interval: ${backtestInterval})`);
 
 			// Validation
 			if (!symbol) {
@@ -400,40 +403,29 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
+			// Validate interval
+			const validIntervals = ['1h', '4h', '1d'];
+			if (!validIntervals.includes(backtestInterval)) {
+				const error = new Error(`Invalid interval: ${backtestInterval}. Must be one of: ${validIntervals.join(', ')}`);
+				error.statusCode = 400;
+				throw error;
+			}
+
 			// Import BacktestingService dynamically
 			const { BacktestingService } = await import('./Trading/Backtesting/BacktestingService.js');
 
-			// Use existing MarketAnalysisService instance instead of recreating services
-			// This ensures all services share the same configuration and cache
+			// Use existing MarketAnalysisService instance
 			const backtestingService = new BacktestingService({
 				logger,
-				marketDataService,
 				marketAnalysisService
 			});
 
-			const start = new Date(startDate);
-			const end = new Date(endDate);
-
-			// Validate dates
-			if (isNaN(start.getTime()) || isNaN(end.getTime())) {
-				const error = new Error('Invalid date format. Use ISO 8601 format (YYYY-MM-DD)');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			if (start >= end) {
-				const error = new Error('startDate must be before endDate');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			// Run backtest
+			// Run backtest (service handles date validation)
 			const results = await backtestingService.runBacktest({
 				symbol,
-				startDate: start,
-				endDate: end,
-				timeframe: timeframe || '1h',
-				strategy: strategy || {}
+				startDate,
+				endDate,
+				interval: backtestInterval
 			});
 
 			return results;
