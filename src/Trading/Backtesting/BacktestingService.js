@@ -1,15 +1,11 @@
 /**
- * Backtesting Service
+ * Backtesting Service - SIMPLE VERSION
  *
- * Analyzes historical market data to generate entry/exit signals and evaluate
- * trading strategy performance over a specified time period.
+ * Simple loop that iterates through each interval and calls the analysis API.
+ * No complex warmup, no filtering - just raw analysis results for each timestamp.
  *
- * Features:
- * - Historical market analysis replay
- * - Entry/exit signal detection
- * - Performance metrics calculation
- * - Parameter optimization support
- * - Trade-by-trade breakdown
+ * Input: symbol, startDate, endDate, interval (1h, 4h, 1d)
+ * Output: Table with timestamp, price, direction, action, confidence, quality, alignment, phase, regime, rsi, scenarios
  */
 
 import { timeframeToMs } from '../../Utils/timeframe.js';
@@ -17,596 +13,150 @@ import { timeframeToMs } from '../../Utils/timeframe.js';
 export class BacktestingService {
 	constructor(options = {}) {
 		this.logger = options.logger || console;
-		this.marketDataService = options.marketDataService;
 		this.marketAnalysisService = options.marketAnalysisService;
-
-		if (!this.marketDataService) throw new Error('BacktestingService requires marketDataService');
 
 		if (!this.marketAnalysisService) throw new Error('BacktestingService requires marketAnalysisService');
 
-		// Cache for backtesting optimizations
-		this.analysisCache = new Map();
-		this.regimeCache = new Map();
-
-		this.logger.info('BacktestingService initialized');
+		this.logger.info('BacktestingService initialized (simple loop version)');
 	}
 
 	/**
-	 * Generate optimized market analysis for backtesting with caching
-	 * @private
-	 */
-	async _generateCachedAnalysis(symbol, timeframes, analysisDate) {
-		const cacheKey = `${symbol}_${JSON.stringify(timeframes)}_${analysisDate.getTime()}`;
-
-		// Check cache first
-		if (this.analysisCache.has(cacheKey)) {
-			return this.analysisCache.get(cacheKey);
-		}
-
-		// For higher timeframes (1d, 4h), check if we can reuse recent calculations
-		const optimizedTimeframes = { ...timeframes };
-		const higherTimeframes = ['1d', '4h', '1w'];
-
-		for (const tf of higherTimeframes) {
-			if (timeframes.long === tf || timeframes.medium === tf) {
-				const regimeCacheKey = `${symbol}_${tf}_${Math.floor(analysisDate.getTime() / (1000 * 60 * 60))}`; // Cache per hour
-
-				if (this.regimeCache.has(regimeCacheKey)) {
-					this.logger.verbose(`Reusing cached regime data for ${symbol} ${tf}`);
-					// We can't directly reuse the full analysis, but we can avoid some recalculations
-				}
-			}
-		}
-
-		// Generate analysis
-		const analysis = await this.marketAnalysisService.generateCompleteAnalysis({
-			symbol,
-			timeframes: optimizedTimeframes,
-			analysisDate,
-		});
-
-		// Cache result (keep last 100 analyses in memory)
-		this.analysisCache.set(cacheKey, analysis);
-		if (this.analysisCache.size > 100) {
-			const firstKey = this.analysisCache.keys().next().value;
-			this.analysisCache.delete(firstKey);
-		}
-
-		return analysis;
-	}
-
-	/**
-	 * Clear caches (useful for memory management)
-	 */
-	clearCaches() {
-		this.analysisCache.clear();
-		this.regimeCache.clear();
-		this.logger.info('Backtesting caches cleared');
-	}
-
-	/**
-	 * Run backtest over a historical period
+	 * Run backtest - simple loop version
 	 *
-	 * @param {Object} params - Backtest parameters
-	 * @param {string} params.symbol - Trading symbol (e.g., 'BTCUSDT')
-	 * @param {Date} params.startDate - Start date of backtest period
-	 * @param {Date} params.endDate - End date of backtest period
-	 * @param {string} params.timeframe - Primary timeframe for analysis (e.g., '1h')
-	 * @param {Object} params.strategy - Strategy configuration (optional)
-	 * @param {Object} params.parameters - Custom parameters for testing (optional)
-	 * @returns {Object} Backtest results with signals and performance metrics
+	 * @param {Object} params
+	 * @param {string} params.symbol - Trading pair (e.g., 'BTCUSDT')
+	 * @param {Date} params.startDate - Backtest start date
+	 * @param {Date} params.endDate - Backtest end date
+	 * @param {string} params.interval - Interval between analyses (1h, 4h, 1d)
+	 * @returns {Object} Results table
 	 */
 	async runBacktest(params) {
-		const { symbol, startDate, endDate, timeframe = '1h', strategy = {}, parameters = {} } = params;
+		const { symbol, startDate, endDate, interval = '1h' } = params;
 
-		// Validate backtest period - limit to 90 days maximum to prevent excessive resource usage
-		const MAX_BACKTEST_DAYS = 90;
-		const periodMs = endDate - startDate;
+		// Validate dates
+		const start = new Date(startDate);
+		const end = new Date(endDate);
+
+		if (isNaN(start.getTime()) || isNaN(end.getTime())) throw new Error('Invalid dates provided');
+
+		if (start >= end) throw new Error('Start date must be before end date');
+
+		// Validate interval
+		const validIntervals = ['1h', '4h', '1d'];
+		if (!validIntervals.includes(interval)) throw new Error(`Invalid interval: ${interval}. Must be one of: ${validIntervals.join(', ')}`);
+
+		// Calculate period
+		const periodMs = end - start;
 		const periodDays = periodMs / (1000 * 60 * 60 * 24);
 
-		if (periodDays > MAX_BACKTEST_DAYS) {
-			throw new Error(
-				`Backtest period too long: ${periodDays.toFixed(1)} days. ` +
-				`Maximum allowed: ${MAX_BACKTEST_DAYS} days. ` +
-				`Please reduce the date range.`
-			);
-		}
+		// Limit backtest period
+		const MAX_DAYS = 90;
+		if (periodDays > MAX_DAYS) throw new Error(`Backtest period too long: ${periodDays.toFixed(1)} days. Maximum: ${MAX_DAYS} days.`);
 
-		this.logger.info(`Starting backtest for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()} (${periodDays.toFixed(1)} days)`);
+		const intervalMs = timeframeToMs(interval);
+		const expectedIntervals = Math.ceil(periodMs / intervalMs);
 
-		// Step 1: Get historical candles for the period
-		const candles = await this._getHistoricalCandles(symbol, timeframe, startDate, endDate);
+		this.logger.info(`Starting backtest for ${symbol}`);
+		this.logger.info(`Period: ${start.toISOString()} to ${end.toISOString()} (${periodDays.toFixed(1)} days)`);
+		this.logger.info(`Interval: ${interval} (~${expectedIntervals} analysis calls)`);
 
-		if (!candles || candles.length === 0) throw new Error(`No historical data available for ${symbol} on ${timeframe} between ${startDate} and ${endDate}`);
+		// Fixed timeframes for multi-timeframe analysis
+		const timeframes = { short: '1h', medium: '4h', long: '1d' };
 
-		this.logger.info(`Retrieved ${candles.length} candles for analysis`);
+		const results = [];
+		let currentDate = new Date(start);
+		let processed = 0;
 
-		// Step 2: Iterate through each candle and generate signals
-		const signals = [];
-		const analysisResults = [];
-		const backtestTimeframes = this._getTimeframesForBacktest(timeframe);
+		// Simple loop through each interval
+		while (currentDate <= end) {
+			processed++;
 
-		// Process in batches to improve performance
-		const BATCH_SIZE = 50; // Process 50 candles at a time
+			// Progress log every 10 intervals
+			if (processed % 10 === 0 || processed === 1) this.logger.info(`Processing ${processed}/${expectedIntervals}: ${currentDate.toISOString()}`);
 
-		for (let batchStart = 0; batchStart < candles.length; batchStart += BATCH_SIZE) {
-			const batchEnd = Math.min(batchStart + BATCH_SIZE, candles.length);
-			const batchCandles = candles.slice(batchStart, batchEnd);
+			try {
+				// Call analysis API
+				const analysis = await this.marketAnalysisService.generateCompleteAnalysis({
+					symbol,
+					timeframes,
+					analysisDate: currentDate,
+				});
 
-			this.logger.info(`Processing batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(candles.length / BATCH_SIZE)} (${batchStart + 1}-${batchEnd}/${candles.length})`);
+				// Extract key data
+				const tradingContext = analysis.trading_context || {};
+				const mtfAlignment = analysis.multi_timeframe_alignment || {};
+				const scenarios = tradingContext.scenario_analysis || {};
+				const shortTF = analysis.statistical_context?.timeframes?.short || {};
 
-			// Process batch sequentially (could be parallelized but API limits might apply)
-			for (let i = 0; i < batchCandles.length; i++) {
-				const candle = batchCandles[i];
-				const analysisDate = new Date(candle.timestamp);
-				const globalIndex = batchStart + i;
+				results.push({
+					timestamp: currentDate.toISOString(),
+					price: this._extractCurrentPrice(analysis),
+					direction: mtfAlignment.dominant_direction || 'neutral',
+					action: tradingContext.recommended_action || 'N/A',
+					confidence: tradingContext.confidence || 0,
+					quality: tradingContext.trade_quality_score?.overall || 0,
+					alignment: mtfAlignment.alignment_score || 0,
+					phase: tradingContext.current_market_phase || 'unknown',
+					regime: shortTF.regime?.type || 'unknown',
+					rsi: shortTF.momentum_indicators?.rsi?.value || null,
+					scenarios: {
+						bullish: scenarios.bullish_scenario?.probability || 0,
+						bearish: scenarios.bearish_scenario?.probability || 0,
+						neutral: scenarios.neutral_scenario?.probability || 0,
+					},
+				});
+			} catch (error) {
+				this.logger.warn(`Analysis failed at ${currentDate.toISOString()}: ${error.message}`);
 
-				try {
-					// Use cached analysis generation
-					const analysis = await this._generateCachedAnalysis(symbol, backtestTimeframes, analysisDate);
-
-					// Extract trading context (entry/exit signals)
-					const tradingContext = analysis.trading_context;
-
-					// Detect entry/exit signals
-					const signal = this._detectSignal(tradingContext, candle, strategy);
-
-					if (signal)
-						signals.push({
-							timestamp: analysisDate,
-							...signal,
-						});
-
-					// Store analysis result
-					analysisResults.push({
-						timestamp: analysisDate,
-						price: candle.close,
-						analysis: {
-							market_phase: tradingContext.current_market_phase,
-							recommended_action: tradingContext.recommended_action,
-							confidence: tradingContext.confidence,
-							trade_quality_score: tradingContext.trade_quality_score,
-						},
-					});
-				} catch (error) {
-					this.logger.warn(`Analysis failed at ${analysisDate.toISOString()}: ${error.message}`);
-					// Continue with next candle
-				}
+				// Still record the timestamp with error
+				results.push({
+					timestamp: currentDate.toISOString(),
+					price: null,
+					direction: 'error',
+					action: 'ERROR',
+					confidence: 0,
+					quality: 0,
+					alignment: 0,
+					phase: 'error',
+					regime: 'error',
+					rsi: null,
+					scenarios: { bullish: 0, bearish: 0, neutral: 0 },
+					error: error.message,
+				});
 			}
+
+			// Move to next interval
+			currentDate = new Date(currentDate.getTime() + intervalMs);
 		}
 
-		this.logger.info(`Backtest complete: Generated ${signals.length} signals from ${candles.length} candles`);
-
-		// Clear caches to free memory
-		this.clearCaches();
-
-		// Step 3: Simulate trades and calculate performance
-		const trades = this._simulateTrades(signals, candles);
-		const performance = this._calculatePerformance(trades, candles[0].close, candles[candles.length - 1].close);
+		this.logger.info(`Backtest complete: ${results.length} intervals processed`);
 
 		return {
-			summary: {
-				symbol,
-				timeframe,
-				period: {
-					start: startDate,
-					end: endDate,
-					duration_days: Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)),
-				},
-				candles_analyzed: candles.length,
-				signals_generated: signals.length,
-				trades_executed: trades.length,
+			symbol,
+			interval,
+			period: {
+				start: start.toISOString(),
+				end: end.toISOString(),
+				days: periodDays,
 			},
-			signals,
-			trades,
-			performance,
-			analysis_results: analysisResults,
+			total_intervals: results.length,
+			results,
 		};
 	}
 
 	/**
-	 * Get historical candles for the backtest period
-	 * Uses MarketDataService which handles DataProvider caching
-	 */
-	async _getHistoricalCandles(symbol, timeframe, startDate, endDate) {
-		// Calculate how many candles we need
-		const timeframeMs = timeframeToMs(timeframe);
-		const periodMs = endDate - startDate;
-		const estimatedCandles = Math.ceil(periodMs / timeframeMs);
-
-		this.logger.info(`Fetching ~${estimatedCandles} candles for ${timeframe} timeframe`);
-
-		// If too many candles requested, fetch in chunks to avoid hitting limits
-		const MAX_CHUNK_SIZE = 3000; // Leave margin below the 5000 maxDataPoints limit
-
-		if (estimatedCandles <= MAX_CHUNK_SIZE) {
-			// Single request is fine
-			return await this._fetchCandleChunk(symbol, timeframe, startDate, endDate, estimatedCandles + 100);
-		} else {
-			// Need to fetch in chunks
-			this.logger.info(`Large dataset (${estimatedCandles} candles) - fetching in chunks`);
-			const allCandles = [];
-			let currentStart = new Date(startDate);
-
-			while (currentStart < endDate) {
-				// Calculate chunk end date (try to get MAX_CHUNK_SIZE candles)
-				const chunkEndMs = Math.min(
-					currentStart.getTime() + (MAX_CHUNK_SIZE * timeframeMs),
-					endDate.getTime()
-				);
-				const chunkEnd = new Date(chunkEndMs);
-
-				this.logger.verbose(`Fetching chunk: ${currentStart.toISOString()} to ${chunkEnd.toISOString()}`);
-
-				const chunkCandles = await this._fetchCandleChunk(symbol, timeframe, currentStart, chunkEnd, MAX_CHUNK_SIZE + 100);
-				allCandles.push(...chunkCandles);
-
-				currentStart = new Date(chunkEnd.getTime() + timeframeMs); // Move to next candle
-			}
-
-			// Filter to exact date range and sort by timestamp
-			const filteredCandles = allCandles
-				.filter((candle) => {
-					const candleDate = new Date(candle.timestamp);
-					return candleDate >= startDate && candleDate <= endDate;
-				})
-				.sort((a, b) => a.timestamp - b.timestamp);
-
-			// Remove duplicates that might occur at chunk boundaries
-			const uniqueCandles = [];
-			const seenTimestamps = new Set();
-
-			for (const candle of filteredCandles) {
-				if (!seenTimestamps.has(candle.timestamp)) {
-					uniqueCandles.push(candle);
-					seenTimestamps.add(candle.timestamp);
-				}
-			}
-
-			this.logger.info(`Fetched ${uniqueCandles.length} unique candles total`);
-			return uniqueCandles;
-		}
-	}
-
-	/**
-	 * Fetch a chunk of candle data
+	 * Extract current price from analysis
 	 * @private
 	 */
-	async _fetchCandleChunk(symbol, timeframe, startDate, endDate, count) {
-		// Get OHLCV data using MarketDataService
-		const ohlcvData = await this.marketDataService.loadOHLCV({
-			symbol,
-			timeframe,
-			count: Math.min(count, 4000), // Cap at 4000 to stay well below 5000 limit
-			to: endDate.getTime(),
-		});
-
-		if (!ohlcvData || !ohlcvData.data || ohlcvData.data.length === 0) {
-			return []; // Return empty array instead of throwing for chunked requests
+	_extractCurrentPrice(analysis) {
+		// Try timeframes in statistical context (short > medium > long)
+		const timeframes = analysis.statistical_context?.timeframes;
+		if (timeframes) {
+			if (timeframes.short?.price_action?.current) return timeframes.short.price_action.current;
+			if (timeframes.medium?.price_action?.current) return timeframes.medium.price_action.current;
+			if (timeframes.long?.price_action?.current) return timeframes.long.price_action.current;
 		}
-
-		// Convert to flat structure for backtesting
-		const bars = ohlcvData.data.map((bar) => ({
-			timestamp: bar.timestamp,
-			open: bar.values.open,
-			high: bar.values.high,
-			low: bar.values.low,
-			close: bar.values.close,
-			volume: bar.values.volume,
-		}));
-
-		// Filter candles to chunk date range
-		const filteredCandles = bars.filter((candle) => {
-			const candleDate = new Date(candle.timestamp);
-			return candleDate >= startDate && candleDate <= endDate;
-		});
-
-		return filteredCandles;
-	}
-
-	/**
-	 * Get appropriate timeframes for backtest based on primary timeframe
-	 * Returns object with long/medium/short keys as expected by MarketAnalysisService
-	 */
-	_getTimeframesForBacktest(primaryTimeframe) {
-		// Map primary timeframe to multi-timeframe setup
-		// Format: { short: primary, medium: 1 level up, long: 2 levels up }
-		const timeframeMaps = {
-			'5m': { short: '5m', medium: '15m', long: '1h' },
-			'15m': { short: '15m', medium: '1h', long: '4h' },
-			'30m': { short: '30m', medium: '1h', long: '4h' },
-			'1h': { short: '1h', medium: '4h', long: '1d' },
-			'4h': { short: '4h', medium: '1d', long: '1w' },
-			'1d': { short: '1d', medium: '1w', long: '1M' },
-		};
-
-		return timeframeMaps[primaryTimeframe] || { short: primaryTimeframe, medium: primaryTimeframe, long: primaryTimeframe };
-	}
-
-	/**
-	 * Detect entry/exit signal from trading context
-	 * Uses stop_loss and targets calculated by TradingContextService for consistency
-	 */
-	_detectSignal(tradingContext, candle, strategy) {
-		const { recommended_action, confidence, trade_quality_score, optimal_entry_strategy, scenario_analysis } = tradingContext;
-
-		// Extract scenarios from scenario_analysis
-		const bullish_scenario = scenario_analysis?.bullish_scenario;
-		const bearish_scenario = scenario_analysis?.bearish_scenario;
-
-		// Strategy filters (customizable)
-		const minConfidence = strategy.minConfidence || 0.6;
-		const minQualityScore = strategy.minQualityScore || 60;
-
-		// Entry signals - LONG
-		if (recommended_action === 'LONG' && confidence >= minConfidence && trade_quality_score.total >= minQualityScore) {
-			// Use stop_loss and targets from TradingContextService for consistency
-			const stopLoss = bullish_scenario?.stop_loss?.price || candle.close * 0.97; // 3% fallback
-			const takeProfit = bullish_scenario?.targets?.[0]?.price || candle.close * 1.06; // 6% fallback
-
-			return {
-				type: 'ENTRY',
-				direction: 'LONG',
-				price: candle.close,
-				confidence,
-				quality_score: trade_quality_score.total,
-				strategy: optimal_entry_strategy?.bullish || 'breakout',
-				stop_loss: stopLoss,
-				take_profit: takeProfit,
-				stop_loss_basis: bullish_scenario?.stop_loss?.basis || 'default',
-				take_profit_basis: bullish_scenario?.targets?.[0]?.basis || 'default',
-			};
-		}
-
-		// Entry signals - SHORT
-		if (recommended_action === 'SHORT' && confidence >= minConfidence && trade_quality_score.total >= minQualityScore) {
-			// Use stop_loss and targets from TradingContextService for consistency
-			const stopLoss = bearish_scenario?.stop_loss?.price || candle.close * 1.03; // 3% fallback
-			const takeProfit = bearish_scenario?.targets?.[0]?.price || candle.close * 0.94; // 6% fallback
-
-			return {
-				type: 'ENTRY',
-				direction: 'SHORT',
-				price: candle.close,
-				confidence,
-				quality_score: trade_quality_score.total,
-				strategy: optimal_entry_strategy?.bearish || 'breakdown',
-				stop_loss: stopLoss,
-				take_profit: takeProfit,
-				stop_loss_basis: bearish_scenario?.stop_loss?.basis || 'default',
-				take_profit_basis: bearish_scenario?.targets?.[0]?.basis || 'default',
-			};
-		}
-
-		// Exit signal (risk warnings, phase changes)
-		if (recommended_action === 'AVOID' || recommended_action === 'WAIT')
-			return {
-				type: 'EXIT',
-				price: candle.close,
-				reason: recommended_action,
-				confidence,
-			};
 
 		return null;
-	}
-
-	/**
-	 * Simulate trades from signals
-	 * Checks for stop_loss and take_profit hits on each candle
-	 */
-	_simulateTrades(signals, candles) {
-		const trades = [];
-		let currentTrade = null;
-		let currentCandleIndex = 0;
-
-		for (const signal of signals) {
-			if (signal.type === 'ENTRY' && !currentTrade) {
-				// Open new trade
-				currentTrade = {
-					entry_time: signal.timestamp,
-					entry_price: signal.price,
-					direction: signal.direction,
-					stop_loss: signal.stop_loss,
-					take_profit: signal.take_profit,
-					confidence: signal.confidence,
-					quality_score: signal.quality_score,
-				};
-
-				// Find the candle index for this entry
-				currentCandleIndex = candles.findIndex(c => c.timestamp >= signal.timestamp);
-
-			} else if (signal.type === 'EXIT' && currentTrade) {
-				// Explicit exit signal
-				const exitCandle = candles.find(c => c.timestamp >= signal.timestamp);
-				if (exitCandle) {
-					currentTrade.exit_time = signal.timestamp;
-					currentTrade.exit_price = signal.price;
-					currentTrade.exit_reason = signal.reason;
-
-					const pnl = currentTrade.direction === 'LONG'
-						? currentTrade.exit_price - currentTrade.entry_price
-						: currentTrade.entry_price - currentTrade.exit_price;
-
-					currentTrade.pnl = pnl;
-					currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-					currentTrade.result = pnl > 0 ? 'WIN' : pnl < 0 ? 'LOSS' : 'BREAKEVEN';
-
-					trades.push(currentTrade);
-					currentTrade = null;
-				}
-			}
-
-			// Check for stop_loss or take_profit hit on subsequent candles
-			if (currentTrade) {
-				const nextSignalIndex = signals.indexOf(signal) + 1;
-				const nextSignalTime = nextSignalIndex < signals.length
-					? signals[nextSignalIndex].timestamp
-					: new Date(Date.now() + 999999999999);
-
-				for (let i = currentCandleIndex + 1; i < candles.length; i++) {
-					const candle = candles[i];
-
-					// Stop checking if we reach the next signal
-					if (candle.timestamp >= nextSignalTime) break;
-
-					// Check stop loss hit
-					if (currentTrade.direction === 'LONG' && candle.low <= currentTrade.stop_loss) {
-						currentTrade.exit_time = new Date(candle.timestamp);
-						currentTrade.exit_price = currentTrade.stop_loss;
-						currentTrade.exit_reason = 'stop_loss';
-
-						const pnl = currentTrade.exit_price - currentTrade.entry_price;
-						currentTrade.pnl = pnl;
-						currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-						currentTrade.result = 'LOSS';
-
-						trades.push(currentTrade);
-						currentTrade = null;
-						break;
-					}
-
-					if (currentTrade && currentTrade.direction === 'SHORT' && candle.high >= currentTrade.stop_loss) {
-						currentTrade.exit_time = new Date(candle.timestamp);
-						currentTrade.exit_price = currentTrade.stop_loss;
-						currentTrade.exit_reason = 'stop_loss';
-
-						const pnl = currentTrade.entry_price - currentTrade.exit_price;
-						currentTrade.pnl = pnl;
-						currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-						currentTrade.result = 'LOSS';
-
-						trades.push(currentTrade);
-						currentTrade = null;
-						break;
-					}
-
-					// Check take profit hit
-					if (currentTrade && currentTrade.direction === 'LONG' && candle.high >= currentTrade.take_profit) {
-						currentTrade.exit_time = new Date(candle.timestamp);
-						currentTrade.exit_price = currentTrade.take_profit;
-						currentTrade.exit_reason = 'take_profit';
-
-						const pnl = currentTrade.exit_price - currentTrade.entry_price;
-						currentTrade.pnl = pnl;
-						currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-						currentTrade.result = 'WIN';
-
-						trades.push(currentTrade);
-						currentTrade = null;
-						break;
-					}
-
-					if (currentTrade && currentTrade.direction === 'SHORT' && candle.low <= currentTrade.take_profit) {
-						currentTrade.exit_time = new Date(candle.timestamp);
-						currentTrade.exit_price = currentTrade.take_profit;
-						currentTrade.exit_reason = 'take_profit';
-
-						const pnl = currentTrade.entry_price - currentTrade.exit_price;
-						currentTrade.pnl = pnl;
-						currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-						currentTrade.result = 'WIN';
-
-						trades.push(currentTrade);
-						currentTrade = null;
-						break;
-					}
-				}
-			}
-		}
-
-		// Close any open trade at end of period
-		if (currentTrade && candles.length > 0) {
-			const lastCandle = candles[candles.length - 1];
-			currentTrade.exit_time = new Date(lastCandle.timestamp);
-			currentTrade.exit_price = lastCandle.close;
-			currentTrade.exit_reason = 'end_of_period';
-
-			const pnl = currentTrade.direction === 'LONG'
-				? currentTrade.exit_price - currentTrade.entry_price
-				: currentTrade.entry_price - currentTrade.exit_price;
-
-			currentTrade.pnl = pnl;
-			currentTrade.pnl_percent = (pnl / currentTrade.entry_price) * 100;
-			currentTrade.result = pnl > 0 ? 'WIN' : pnl < 0 ? 'LOSS' : 'BREAKEVEN';
-
-			trades.push(currentTrade);
-		}
-
-		return trades;
-	}
-
-	/**
-	 * Calculate performance metrics
-	 */
-	_calculatePerformance(trades, initialPrice, finalPrice) {
-		const buyAndHoldPnl = ((finalPrice - initialPrice) / initialPrice) * 100;
-
-		if (trades.length === 0)
-			return {
-				total_trades: 0,
-				winning_trades: 0,
-				losing_trades: 0,
-				win_rate: 0,
-				total_pnl: 0,
-				total_pnl_percent: 0,
-				average_win: 0,
-				average_loss: 0,
-				profit_factor: 0,
-				sharpe_ratio: 0,
-				max_drawdown: 0,
-				buy_and_hold_pnl_percent: buyAndHoldPnl,
-				strategy_vs_hold: 0 - buyAndHoldPnl,
-			};
-
-		// Basic metrics
-		const winningTrades = trades.filter((t) => t.result === 'WIN');
-		const losingTrades = trades.filter((t) => t.result === 'LOSS');
-
-		const totalPnl = trades.reduce((sum, t) => sum + t.pnl, 0);
-		const totalPnlPercent = trades.reduce((sum, t) => sum + t.pnl_percent, 0);
-
-		const averageWin = winningTrades.length > 0 ? winningTrades.reduce((sum, t) => sum + t.pnl, 0) / winningTrades.length : 0;
-
-		const averageLoss = losingTrades.length > 0 ? Math.abs(losingTrades.reduce((sum, t) => sum + t.pnl, 0) / losingTrades.length) : 0;
-
-		const profitFactor = averageLoss > 0 ? averageWin / averageLoss : 0;
-
-		// Drawdown calculation
-		let peak = 0;
-		let maxDrawdown = 0;
-		let cumPnl = 0;
-
-		for (const trade of trades) {
-			cumPnl += trade.pnl_percent;
-			if (cumPnl > peak) peak = cumPnl;
-			const drawdown = peak - cumPnl;
-			if (drawdown > maxDrawdown) maxDrawdown = drawdown;
-		}
-
-		// Sharpe ratio (simplified)
-		const returns = trades.map((t) => t.pnl_percent);
-		const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
-		const stdDev = Math.sqrt(returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length);
-		const sharpeRatio = stdDev > 0 ? avgReturn / stdDev : 0;
-
-		// Buy and hold comparison
-		const buyAndHoldPnlPercent = ((finalPrice - initialPrice) / initialPrice) * 100;
-
-		return {
-			total_trades: trades.length,
-			winning_trades: winningTrades.length,
-			losing_trades: losingTrades.length,
-			breakeven_trades: trades.filter((t) => t.result === 'BREAKEVEN').length,
-			win_rate: (winningTrades.length / trades.length) * 100,
-			total_pnl: totalPnl,
-			total_pnl_percent: totalPnlPercent,
-			average_win: averageWin,
-			average_loss: averageLoss,
-			profit_factor: profitFactor,
-			sharpe_ratio: sharpeRatio,
-			max_drawdown: maxDrawdown,
-			buy_and_hold_pnl_percent: buyAndHoldPnlPercent,
-			strategy_vs_hold: totalPnlPercent - buyAndHoldPnlPercent,
-		};
 	}
 }
