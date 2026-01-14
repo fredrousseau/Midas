@@ -835,6 +835,53 @@
             letter-spacing: 0.5px;
         }
 
+        /* Results Table Styles */
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .results-table th,
+        .results-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .results-table th {
+            background: #1a1a1a;
+            color: #999;
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 11px;
+            letter-spacing: 0.5px;
+            position: sticky;
+            top: 0;
+        }
+
+        .results-table tbody tr:hover {
+            background: rgba(41, 98, 255, 0.1);
+        }
+
+        .results-table .action-long {
+            color: #26a69a;
+            font-weight: 600;
+        }
+
+        .results-table .action-short {
+            color: #ef5350;
+            font-weight: 600;
+        }
+
+        .results-table .action-wait {
+            color: #999;
+        }
+
+        .results-table .action-error {
+            color: #ff9800;
+        }
+
         .metric-row {
             display: flex;
             justify-content: space-between;
@@ -1118,11 +1165,8 @@
                             </div>
 
                             <div class="control-group">
-                                <label for="btTimeframe">Timeframe</label>
+                                <label for="btTimeframe">Intervalle</label>
                                 <select id="btTimeframe">
-                                    <option value="5m">5 minutes</option>
-                                    <option value="15m">15 minutes</option>
-                                    <option value="30m">30 minutes</option>
                                     <option value="1h" selected>1 heure</option>
                                     <option value="4h">4 heures</option>
                                     <option value="1d">1 jour</option>
@@ -1140,17 +1184,6 @@
                             </div>
                         </div>
 
-                        <div class="strategy-controls">
-                            <div class="control-group">
-                                <label for="minConfidence">Confiance minimale (%)</label>
-                                <input type="number" id="minConfidence" value="60" min="0" max="100" step="5">
-                            </div>
-
-                            <div class="control-group">
-                                <label for="minQuality">Score qualité minimum</label>
-                                <input type="number" id="minQuality" value="60" min="0" max="100" step="5">
-                            </div>
-                        </div>
 
                         <div style="margin-top: 20px; text-align: center;">
                             <button id="runBacktestBtn" onclick="window.runBacktest()">
@@ -1164,10 +1197,9 @@
                     <div id="resultsSection" class="results-section">
                         <div class="summary-grid" id="summaryGrid"></div>
                         <div class="performance-section" id="performanceSection"></div>
-                        <div class="trades-section" id="tradesSection"></div>
                         <div class="export-section">
                             <button onclick="window.exportJSON()">💾 Exporter JSON</button>
-                            <button onclick="window.exportCSV()">📊 Exporter CSV</button>
+                            <button onclick="window.exportCSV()">📊 Exporter Signaux CSV</button>
                         </div>
                     </div>
                 </div>

@@ -161,6 +161,7 @@ const redisConfig = {
 const dataProvider = new DataProvider({
 	dataAdapter: binanceAdapter,
 	logger: logger,
+	maxDataPoints: parseInt(process.env.MAX_DATA_POINTS || '5000'),
 	redisConfig: redisConfig,
 });
 
@@ -262,20 +263,20 @@ app.use(express.static('src/WebUI'));
  * Must be placed AFTER all routes but BEFORE the 404 handler
  */
 app.use((err, req, res, next) => {
-	// Log error details
-	const errorContext = {
-		method: req.method,
-		path: req.path,
-		ip: req.ip || req.connection.remoteAddress,
-		error: err.message,
-		stack: err.stack,
-	};
+	// Build error details for logging
+	const errorDetails = `${req.method} ${req.path} - ${err.message}`;
+	const clientInfo = `[${req.ip || req.connection.remoteAddress}]`;
 
 	// Determine log level based on error type
-	if (err.statusCode && err.statusCode < 500) 
-		logger.warn('Client error occurred', errorContext);
-	 else 
-		logger.error('Server error occurred', errorContext);
+	if (err.statusCode && err.statusCode < 500) {
+		logger.warn(`Client error ${clientInfo}: ${errorDetails}`);
+	} else {
+		logger.error(`Server error ${clientInfo}: ${errorDetails}`);
+		// Log stack trace for server errors
+		if (err.stack) {
+			logger.error(`Stack trace:\n${err.stack}`);
+		}
+	}
 
 	// Don't send response if headers already sent
 	if (res.headersSent) 
