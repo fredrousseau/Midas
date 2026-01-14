@@ -583,34 +583,49 @@ export class TradingContextService {
 
 	/**
 	 * Generate recommendation
+	 * Uses dynamic confidence calculation based on multiple factors
 	 */
 	_generateRecommendation(scenarios, tradeQuality, mtfAlignment) {
 		const bullishProb = scenarios.bullish_scenario?.probability || 0;
 		const bearishProb = scenarios.bearish_scenario?.probability || 0;
+		const neutralProb = scenarios.neutral_scenario?.probability || 0;
 		const overallQuality = tradeQuality.overall;
+		const alignmentScore = mtfAlignment.alignment_score || 0;
+		const hasConflicts = (mtfAlignment.conflicts?.length || 0) > 0;
+		const dominantDirection = mtfAlignment.dominant_direction || 'neutral';
 
-		let action, confidence, reasoning;
+		// Calculate dynamic confidence based on multiple factors
+		const directionStrength = Math.max(bullishProb, bearishProb) - neutralProb;
+		const baseConfidence = (overallQuality * 0.4) + (alignmentScore * 0.3) + (directionStrength * 0.3);
 
-		// High quality setup
-		if (overallQuality > 0.75 && (bullishProb > 0.65 || bearishProb > 0.65)) {
-			const direction = bullishProb > bearishProb ? 'bullish' : 'bearish';
-			action = `WAIT for ${direction === 'bullish' ? 'upside' : 'downside'} breakout, then ${direction === 'bullish' ? 'BUY' : 'SELL'}`;
-			confidence = round(Math.max(bullishProb, bearishProb), 2);
-			reasoning = `High quality setup: ${scenarios.bullish_scenario?.rationale || scenarios.bearish_scenario?.rationale}`;
+		// Apply conflict penalty
+		const conflictPenalty = hasConflicts ? 0.15 : 0;
+		const confidence = round(Math.max(0.1, Math.min(0.95, baseConfidence - conflictPenalty)), 2);
+
+		let action, reasoning;
+		const isBullish = bullishProb > bearishProb;
+		const direction = isBullish ? 'bullish' : 'bearish';
+		const maxProb = Math.max(bullishProb, bearishProb);
+
+		// TRADE: High quality + strong direction + good alignment
+		if (overallQuality >= 0.70 && maxProb >= 0.50 && alignmentScore >= 0.70 && !hasConflicts) {
+			action = isBullish ? 'TRADE_LONG' : 'TRADE_SHORT';
+			reasoning = `Strong ${direction} setup: quality=${round(overallQuality, 2)}, alignment=${round(alignmentScore, 2)}, prob=${round(maxProb, 2)}`;
 		}
-		// Medium quality
-		else if (overallQuality > 0.60 && (bullishProb > 0.55 || bearishProb > 0.55)) {
-			action = 'WAIT for confirmation';
-			confidence = 0.65;
-			reasoning = 'Decent setup but needs confirmation';
+		// PREPARE: Good quality, preparing for entry
+		else if (overallQuality >= 0.60 && maxProb >= 0.45 && alignmentScore >= 0.60) {
+			action = isBullish ? 'PREPARE_LONG' : 'PREPARE_SHORT';
+			reasoning = `${direction} setup developing: wait for confirmation`;
 		}
-		// Low quality or conflicting
+		// CAUTION: Mixed signals or moderate quality
+		else if (overallQuality >= 0.50 && maxProb >= 0.40) {
+			action = 'CAUTION';
+			reasoning = hasConflicts ? 'MTF conflicts detected' : 'Moderate setup, increased risk';
+		}
+		// WAIT: Low quality or unclear direction
 		else {
 			action = 'WAIT';
-			confidence = 0.40;
-			reasoning = mtfAlignment.conflicts?.length > 0
-				? 'MTF conflicts detected, unclear direction'
-				: 'Setup quality insufficient';
+			reasoning = neutralProb > 0.40 ? 'Neutral/ranging conditions' : 'Setup quality insufficient';
 		}
 
 		return { action, confidence, reasoning };
