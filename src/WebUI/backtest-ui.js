@@ -1,6 +1,6 @@
 /**
- * Backtest UI Logic
- * Frontend for MIDAS backtesting system
+ * Backtest UI Logic - SIMPLE VERSION
+ * Displays a table of all analysis results (not just entry signals)
  */
 
 // Global state
@@ -9,230 +9,217 @@ let currentResults = null;
 /**
  * Run backtest
  */
-window.runBacktest = async function() {
-    const symbol = document.getElementById('btSymbol').value.trim();
-    const timeframe = document.getElementById('btTimeframe').value;
-    const startDate = document.getElementById('startDate').value;
-    const endDate = document.getElementById('endDate').value;
-    const minConfidence = parseFloat(document.getElementById('minConfidence').value) / 100;
-    const minQuality = parseInt(document.getElementById('minQuality').value);
+window.runBacktest = async function () {
+	const symbol = document.getElementById('btSymbol').value.trim().toUpperCase();
+	const interval = document.getElementById('btTimeframe').value;
+	const startDate = document.getElementById('startDate').value;
+	const endDate = document.getElementById('endDate').value;
 
-    // Validation
-    if (!symbol) {
-        showStatus('error', 'Le symbole est requis');
-        return;
-    }
+	// Validation
+	if (!symbol) {
+		showStatus('error', 'Le symbole est requis');
+		return;
+	}
 
-    if (!startDate || !endDate) {
-        showStatus('error', 'Les dates de début et de fin sont requises');
-        return;
-    }
+	if (!startDate || !endDate) {
+		showStatus('error', 'Les dates de début et de fin sont requises');
+		return;
+	}
 
-    if (new Date(startDate) >= new Date(endDate)) {
-        showStatus('error', 'La date de début doit être avant la date de fin');
-        return;
-    }
+	if (new Date(startDate) >= new Date(endDate)) {
+		showStatus('error', 'La date de début doit être avant la date de fin');
+		return;
+	}
 
-    // Disable button
-    const btn = document.getElementById('runBacktestBtn');
-    btn.disabled = true;
+	// Disable button
+	const btn = document.getElementById('runBacktestBtn');
+	btn.disabled = true;
 
-    // Show loading status
-    showStatus('loading', `Backtesting en cours pour ${symbol} sur ${timeframe}...`);
+	// Show loading status
+	showStatus('loading', `Backtesting en cours pour ${symbol} sur ${interval}...`);
 
-    // Hide results
-    document.getElementById('resultsSection').classList.remove('visible');
+	// Hide results
+	document.getElementById('resultsSection').classList.remove('visible');
 
-    try {
-        const response = await fetch('/api/v1/backtest', {
-            method: 'POST',
-            credentials: 'include', // Important: envoie le cookie automatiquement
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                symbol,
-                timeframe,
-                startDate,
-                endDate,
-                strategy: {
-                    minConfidence,
-                    minQualityScore: minQuality
-                }
-            })
-        });
+	try {
+		const response = await fetch('/api/v1/backtest', {
+			method: 'POST',
+			credentials: 'include',
+			headers: {
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify({
+				symbol,
+				interval,
+				startDate,
+				endDate,
+			}),
+		});
 
-        if (!response.ok) {
-            let errorMessage = 'Erreur lors du backtest';
-            try {
-                const errorData = await response.json();
-                console.error('Backend error response:', errorData);
-                // Backend returns { success: false, error: { type, message } }
-                if (errorData.error && typeof errorData.error === 'object') {
-                    errorMessage = errorData.error.message || JSON.stringify(errorData.error);
-                } else {
-                    errorMessage = errorData.error || errorData.message || JSON.stringify(errorData);
-                }
-            } catch (parseError) {
-                // Response wasn't JSON, try to get text
-                const textError = await response.text();
-                errorMessage = textError || `HTTP ${response.status}: ${response.statusText}`;
-                console.error('Backend error (non-JSON):', errorMessage);
-            }
-            throw new Error(errorMessage);
-        }
+		if (!response.ok) {
+			let errorMessage = 'Erreur lors du backtest';
+			try {
+				const errorData = await response.json();
+				console.error('Backend error response:', errorData);
+				if (errorData.error && typeof errorData.error === 'object') {
+					errorMessage = errorData.error.message || JSON.stringify(errorData.error);
+				} else {
+					errorMessage = errorData.error || errorData.message || JSON.stringify(errorData);
+				}
+			} catch (parseError) {
+				const textError = await response.text();
+				errorMessage = textError || `HTTP ${response.status}: ${response.statusText}`;
+				console.error('Backend error (non-JSON):', errorMessage);
+			}
+			throw new Error(errorMessage);
+		}
 
-        const response_data = await response.json();
+		const response_data = await response.json();
+		const results = response_data.data;
+		currentResults = results;
 
-        // Backend returns { success: true, data: { summary, trades, performance, ... } }
-        const results = response_data.data;
-        currentResults = results;
-
-        showStatus('success', `Backtest terminé: ${results.summary.trades_executed} trades exécutés`);
-        displayResults(results);
-
-    } catch (error) {
-        console.error('Backtest error:', error);
-        showStatus('error', `Erreur: ${error.message}`);
-    } finally {
-        btn.disabled = false;
-    }
+		showStatus('success', `Backtest terminé: ${results.total_intervals} intervalles analysés`);
+		displayResults(results);
+	} catch (error) {
+		console.error('Backtest error:', error);
+		showStatus('error', `Erreur: ${error.message}`);
+	} finally {
+		btn.disabled = false;
+	}
 };
 
 /**
  * Display backtest results
  */
 function displayResults(results) {
-    const { summary, performance, trades } = results;
+	const { period, total_intervals, results: data } = results;
 
-    // Show results section
-    document.getElementById('resultsSection').classList.add('visible');
+	// Show results section
+	document.getElementById('resultsSection').classList.add('visible');
 
-    // Display summary cards
-    displaySummary(summary, performance);
+	// Display summary
+	displaySummary(results);
 
-    // Display performance metrics
-    displayPerformance(performance);
-
-    // Display trades
-    displayTrades(trades);
+	// Display results table
+	displayResultsTable(data);
 }
 
 /**
  * Display summary cards
  */
-function displaySummary(summary, performance) {
-    const summaryGrid = document.getElementById('summaryGrid');
+function displaySummary(results) {
+	const summaryGrid = document.getElementById('summaryGrid');
+	const { period, total_intervals, results: data } = results;
 
-    const cards = [
-        {
-            label: 'Chandeliers Analysés',
-            value: summary.candles_analyzed.toLocaleString(),
-            class: ''
-        },
-        {
-            label: 'Signaux Générés',
-            value: summary.signals_generated.toLocaleString(),
-            class: ''
-        },
-        {
-            label: 'Trades Exécutés',
-            value: summary.trades_executed.toLocaleString(),
-            class: ''
-        },
-        {
-            label: 'Win Rate',
-            value: `${performance.win_rate.toFixed(1)}%`,
-            class: performance.win_rate >= 60 ? 'positive' : performance.win_rate >= 40 ? '' : 'negative'
-        },
-        {
-            label: 'P&L Total',
-            value: `${performance.total_pnl_percent > 0 ? '+' : ''}${performance.total_pnl_percent.toFixed(2)}%`,
-            class: performance.total_pnl_percent > 0 ? 'positive' : 'negative'
-        },
-        {
-            label: 'vs Buy & Hold',
-            value: `${performance.strategy_vs_hold > 0 ? '+' : ''}${performance.strategy_vs_hold.toFixed(2)}%`,
-            class: performance.strategy_vs_hold > 0 ? 'positive' : 'negative'
-        }
-    ];
+	// Count actions
+	const actionCounts = {};
+	data.forEach((row) => {
+		const action = row.action || 'N/A';
+		actionCounts[action] = (actionCounts[action] || 0) + 1;
+	});
 
-    summaryGrid.innerHTML = cards.map(card => `
+	// Build summary cards
+	const cards = [
+		{
+			label: 'Intervalles',
+			value: total_intervals.toLocaleString(),
+			class: '',
+		},
+		{
+			label: 'Période',
+			value: `${period.days.toFixed(0)} jours`,
+			class: '',
+		},
+	];
+
+	// Add action count cards (top 4)
+	const sortedActions = Object.entries(actionCounts)
+		.sort((a, b) => b[1] - a[1])
+		.slice(0, 4);
+
+	sortedActions.forEach(([action, count]) => {
+		let cardClass = '';
+		if (action === 'LONG') cardClass = 'positive';
+		else if (action === 'SHORT') cardClass = 'negative';
+
+		cards.push({
+			label: action,
+			value: count.toLocaleString(),
+			class: cardClass,
+		});
+	});
+
+	summaryGrid.innerHTML = cards
+		.map(
+			(card) => `
         <div class="stat-card">
             <div class="stat-label">${card.label}</div>
             <div class="stat-value ${card.class}">${card.value}</div>
         </div>
-    `).join('');
+    `
+		)
+		.join('');
 }
 
 /**
- * Display performance metrics
+ * Display results table
  */
-function displayPerformance(performance) {
-    const section = document.getElementById('performanceSection');
+function displayResultsTable(data) {
+	const section = document.getElementById('performanceSection');
 
-    const metrics = [
-        { label: 'Total Trades', value: performance.total_trades },
-        { label: 'Trades Gagnants', value: performance.winning_trades, class: 'positive' },
-        { label: 'Trades Perdants', value: performance.losing_trades, class: 'negative' },
-        { label: 'Win Rate', value: `${performance.win_rate.toFixed(2)}%`, class: performance.win_rate >= 60 ? 'positive' : '' },
-        { label: 'Profit Factor', value: performance.profit_factor.toFixed(2), class: performance.profit_factor >= 2 ? 'positive' : '' },
-        { label: 'Sharpe Ratio', value: performance.sharpe_ratio.toFixed(2), class: performance.sharpe_ratio >= 1 ? 'positive' : '' },
-        { label: 'Max Drawdown', value: `-${performance.max_drawdown.toFixed(2)}%`, class: 'negative' },
-        { label: 'Gain Moyen', value: `${performance.average_win.toFixed(2)}`, class: 'positive' },
-        { label: 'Perte Moyenne', value: `${performance.average_loss.toFixed(2)}`, class: 'negative' },
-        { label: 'Buy & Hold P&L', value: `${performance.buy_and_hold_pnl_percent > 0 ? '+' : ''}${performance.buy_and_hold_pnl_percent.toFixed(2)}%` },
-        { label: 'Stratégie P&L', value: `${performance.total_pnl_percent > 0 ? '+' : ''}${performance.total_pnl_percent.toFixed(2)}%`, class: performance.total_pnl_percent > 0 ? 'positive' : 'negative' },
-        { label: 'Différence vs Hold', value: `${performance.strategy_vs_hold > 0 ? '+' : ''}${performance.strategy_vs_hold.toFixed(2)}%`, class: performance.strategy_vs_hold > 0 ? 'positive' : 'negative' }
-    ];
+	if (!data || data.length === 0) {
+		section.innerHTML = '<h2>📊 Résultats</h2><p style="color: #aaa;">Aucun résultat</p>';
+		return;
+	}
 
-    section.innerHTML = `
-        <h2>📊 Métriques de Performance</h2>
-        ${metrics.map(metric => `
-            <div class="metric-row">
-                <span class="metric-label">${metric.label}</span>
-                <span class="metric-value ${metric.class || ''}">${metric.value}</span>
-            </div>
-        `).join('')}
+	// Build table
+	section.innerHTML = `
+        <h2>📊 Résultats (${data.length} intervalles)</h2>
+        <div style="overflow-x: auto; margin-top: 16px;">
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Prix</th>
+                        <th>Action</th>
+                        <th>Confiance</th>
+                        <th>Qualité</th>
+                        <th>Phase</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map((row) => formatTableRow(row)).join('')}
+                </tbody>
+            </table>
+        </div>
     `;
 }
 
 /**
- * Display trades
+ * Format a single table row
  */
-function displayTrades(trades) {
-    const section = document.getElementById('tradesSection');
+function formatTableRow(row) {
+	const timestamp = new Date(row.timestamp).toLocaleString('fr-FR');
+	const price = row.price ? row.price.toFixed(2) : '-';
+	const confidence = row.confidence ? `${(row.confidence * 100).toFixed(2)}%` : '-';
+	const quality = row.quality ? `${(row.quality * 100).toFixed(2)}%` : '-';
 
-    if (trades.length === 0) {
-        section.innerHTML = '<h2>📈 Trades</h2><p style="color: #aaa;">Aucun trade exécuté</p>';
-        return;
-    }
+	// Action styling
+	let actionClass = '';
+	if (row.action === 'LONG') actionClass = 'action-long';
+	else if (row.action === 'SHORT') actionClass = 'action-short';
+	else if (row.action === 'ERROR') actionClass = 'action-error';
+	else if (row.action && row.action.includes('WAIT')) actionClass = 'action-wait';
 
-    // Show last 10 trades
-    const recentTrades = trades.slice(-10).reverse();
-
-    section.innerHTML = `
-        <h2>📈 Derniers Trades (${recentTrades.length}/${trades.length})</h2>
-        ${recentTrades.map(trade => `
-            <div class="trade-card ${trade.result.toLowerCase()}">
-                <div class="trade-header">
-                    <span class="trade-direction">
-                        ${trade.direction === 'LONG' ? '📈' : '📉'} ${trade.direction}
-                    </span>
-                    <span class="trade-pnl ${trade.pnl_percent > 0 ? 'positive' : 'negative'}">
-                        ${trade.pnl_percent > 0 ? '+' : ''}${trade.pnl_percent.toFixed(2)}%
-                    </span>
-                </div>
-                <div class="trade-details">
-                    <div><span class="detail-label">Entrée:</span> ${new Date(trade.entry_time).toLocaleString()}</div>
-                    <div><span class="detail-label">Prix entrée:</span> ${trade.entry_price.toFixed(2)}</div>
-                    <div><span class="detail-label">Sortie:</span> ${new Date(trade.exit_time).toLocaleString()}</div>
-                    <div><span class="detail-label">Prix sortie:</span> ${trade.exit_price.toFixed(2)}</div>
-                    <div><span class="detail-label">Confiance:</span> ${(trade.confidence * 100).toFixed(0)}%</div>
-                    <div><span class="detail-label">Raison:</span> ${trade.exit_reason}</div>
-                </div>
-            </div>
-        `).join('')}
+	return `
+        <tr>
+            <td>${timestamp}</td>
+            <td>${price}</td>
+            <td class="${actionClass}">${row.action}</td>
+            <td>${confidence}</td>
+            <td>${quality}</td>
+            <td>${row.phase || '-'}</td>
+        </tr>
     `;
 }
 
@@ -240,76 +227,72 @@ function displayTrades(trades) {
  * Show status message
  */
 function showStatus(type, message) {
-    const statusDiv = document.getElementById('statusMessage');
-    statusDiv.className = `status-message ${type}`;
+	const statusDiv = document.getElementById('statusMessage');
+	statusDiv.className = `status-message ${type}`;
+	statusDiv.style.display = 'flex';
 
-    if (type === 'loading') {
-        statusDiv.innerHTML = `<div class="spinner"></div><span>${message}</span>`;
-    } else {
-        statusDiv.textContent = message;
-    }
+	if (type === 'loading') {
+		statusDiv.innerHTML = `<div class="spinner"></div><span>${message}</span>`;
+	} else {
+		statusDiv.textContent = message;
+	}
 
-    if (type !== 'loading') {
-        setTimeout(() => {
-            statusDiv.classList.remove(type);
-            statusDiv.style.display = 'none';
-        }, 5000);
-    }
+	if (type !== 'loading') {
+		setTimeout(() => {
+			statusDiv.classList.remove(type);
+			statusDiv.style.display = 'none';
+		}, 5000);
+	}
 }
 
 /**
  * Export results as JSON
  */
-window.exportJSON = function() {
-    if (!currentResults) {
-        showStatus('error', 'Aucun résultat à exporter');
-        return;
-    }
+window.exportJSON = function () {
+	if (!currentResults) {
+		showStatus('error', 'Aucun résultat à exporter');
+		return;
+	}
 
-    const dataStr = JSON.stringify(currentResults, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backtest_${currentResults.summary.symbol}_${new Date().toISOString()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+	const dataStr = JSON.stringify(currentResults, null, 2);
+	const blob = new Blob([dataStr], { type: 'application/json' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = `backtest_${currentResults.symbol}_${new Date().toISOString()}.json`;
+	a.click();
+	URL.revokeObjectURL(url);
 
-    showStatus('success', 'Résultats exportés en JSON');
+	showStatus('success', 'Résultats exportés en JSON');
 };
 
 /**
- * Export trades as CSV
+ * Export results as CSV
  */
-window.exportCSV = function() {
-    if (!currentResults || !currentResults.trades) {
-        showStatus('error', 'Aucun trade à exporter');
-        return;
-    }
+window.exportCSV = function () {
+	if (!currentResults || !currentResults.results) {
+		showStatus('error', 'Aucun résultat à exporter');
+		return;
+	}
 
-    const headers = ['Entry Time', 'Exit Time', 'Direction', 'Entry Price', 'Exit Price', 'P&L', 'P&L %', 'Result', 'Exit Reason', 'Confidence'];
-    const rows = currentResults.trades.map(trade => [
-        new Date(trade.entry_time).toISOString(),
-        new Date(trade.exit_time).toISOString(),
-        trade.direction,
-        trade.entry_price,
-        trade.exit_price,
-        trade.pnl,
-        trade.pnl_percent,
-        trade.result,
-        trade.exit_reason,
-        trade.confidence
-    ]);
+	const headers = ['Timestamp', 'Prix', 'Action', 'Confiance', 'Qualité', 'Phase'];
+	const rows = currentResults.results.map((row) => [
+		new Date(row.timestamp).toISOString(),
+		row.price || '',
+		row.action || '',
+		row.confidence || '',
+		row.quality || '',
+		row.phase || '',
+	]);
 
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backtest_trades_${currentResults.summary.symbol}_${new Date().toISOString()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+	const csv = [headers, ...rows].map((row) => row.join(',')).join('\n');
+	const blob = new Blob([csv], { type: 'text/csv' });
+	const url = URL.createObjectURL(blob);
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = `backtest_${currentResults.symbol}_${new Date().toISOString()}.csv`;
+	a.click();
+	URL.revokeObjectURL(url);
 
-    showStatus('success', 'Trades exportés en CSV');
+	showStatus('success', 'Résultats exportés en CSV');
 };
-
