@@ -109,25 +109,6 @@ export class McpService {
 	}
 
 	/**
-	 * Execute a registered tool directly by name
-	 * @param {string} toolName - Name of the tool to execute
-	 * @param {Object} args - Arguments to pass to the tool
-	 * @returns {Promise<Object>} Tool execution result
-	 */
-	async executeTool(toolName, args = {}) {
-		const callback = this.toolCallbacks.get(toolName);
-		if (!callback) throw new Error(`Tool "${toolName}" not found`);
-
-		try {
-			const result = await callback(args);
-			return result;
-		} catch (error) {
-			this.logger.error(`Error executing tool "${toolName}": ${error.message}`);
-			throw error;
-		}
-	}
-
-	/**
 	 * Discover and register all Mcp tool modules from mcp-modules directory
 	 * Each module must export a register(mcpService, log, ...dependencies) function
 	 *
