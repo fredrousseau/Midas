@@ -117,7 +117,7 @@ function computeBasicMetrics(results) {
 	// Category match
 	const category = results.filter(r => r.predicted.category === r.truth.category).length;
 
-	// Direction match (for directional regimes only)
+	// Direction comparison (count of cases where both directions are not neutral)
 	const directionalPairs = results.filter(r =>
 		r.truth.direction !== 'neutral' && r.predicted.direction !== 'neutral'
 	);
@@ -139,9 +139,9 @@ function computeBasicMetrics(results) {
 		exact: { count: exact, pct: (exact / total * 100).toFixed(1) },
 		category: { count: category, pct: (category / total * 100).toFixed(1) },
 		direction: {
-			count: direction,
-			total: directionalPairs.length,
-			pct: directionalPairs.length > 0 ? (direction / directionalPairs.length * 100).toFixed(1) : 'N/A',
+			count: directionalPairs.length,
+			total: total,
+			pct: total > 0 ? (directionalPairs.length / total * 100).toFixed(1) : 'N/A',
 		},
 		confidence: {
 			high: { total: highConf.length, correct: highConfCorrect, pct: highConf.length > 0 ? (highConfCorrect / highConf.length * 100).toFixed(1) : 'N/A' },
@@ -387,11 +387,16 @@ function displayResults(metrics, config) {
 	console.log('                      BACKTEST RESULTS');
 	console.log(`${line}\n`);
 
+	// Categories and directions reference
+	console.log('CATEGORIES AND DIRECTIONS REFERENCE:');
+	console.log('   Categories: trending (tendance), breakout (percée), range (latéral)');
+	console.log('   Directions: bullish (haussier), bearish (baissier), neutral (neutre)');
+
 	// Basic accuracy
 	console.log('BASIC ACCURACY:');
 	console.log(`  Exact match:      ${metrics.basic.exact.pct}%  (${metrics.basic.exact.count}/${metrics.basic.total})`);
 	console.log(`  Category match:   ${metrics.basic.category.pct}%  (${metrics.basic.category.count}/${metrics.basic.total})`);
-	console.log(`  Direction match:  ${metrics.basic.direction.pct}%  (${metrics.basic.direction.count}/${metrics.basic.direction.total})`);
+	console.log(`  Direction comparison:  ${metrics.basic.direction.pct}%  (${metrics.basic.direction.count}/${metrics.basic.direction.total})`);
 
 	// Confidence breakdown
 	console.log(`\nCONFIDENCE BREAKDOWN:`);
