@@ -69,7 +69,7 @@ REDIS_MAX_BARS_PER_KEY=10000
 **Data provider settings:**
 - `MAX_DATA_POINTS=5000` - Maximum bars per API request (increase if your data source supports more)
   - Binance supports up to ~1000-1500 depending on timeframe
-  - Set higher for backtesting with large datasets
+  - Set higher for large historical analyses
   - DataProvider will validate against this limit
 
 ## Architecture Overview
@@ -122,21 +122,13 @@ LAYER 5: API Exposure (REST endpoints + WebUI)
 
 ### Data Flow Architecture
 
-**Backtesting Architecture (Simplified 2026-01-13):**
-
-The BacktestingService is a **lightweight orchestrator** (462 lines) that delegates to existing services:
-
+**Data Pipeline:**
 - **MarketDataService** → DataProvider → Redis cache → BinanceAdapter (OHLCV data)
 - **MarketAnalysisService** → StatisticalContext, RegimeDetection, TradingContext (full analysis)
-- **BacktestingService** → Signal detection, trade simulation, performance metrics (backtesting logic)
 
 **Key points:**
-- NO duplicate caching (uses Redis via DataProvider)
-- NO duplicate OHLCV fetch logic (delegates to MarketDataService)
-- Parallel batch processing (10 candles/batch) for performance
-- **Redis is essential** for avoiding rate limits during backtesting
-
-See [BACKTEST_SIMPLIFICATION.md](BACKTEST_SIMPLIFICATION.md) for details.
+- Caching via Redis (DataProvider)
+- **Redis is essential** for avoiding rate limits during intensive analysis
 
 ## Important Code Patterns
 
@@ -196,7 +188,6 @@ app.post('/api/v1/endpoint',
 
 2. **Service Dependencies**
    - MarketAnalysisService requires: `dataProvider`, `indicatorService`, `logger`
-   - BacktestingService requires: `marketDataService`, `marketAnalysisService`, `logger`
    - Missing any dependency causes "requires X instance in options" error
 
 3. **WebUI Error Display**
@@ -224,7 +215,6 @@ src/
 │   │   ├── StatisticalContext/  # 6 Enrichers
 │   │   ├── RegimeDetection/     # Market regime classification
 │   │   └── TradingContext/      # Actionable recommendations
-│   └── Backtesting/       # Historical analysis
 ├── OAuth/                 # Authentication services
 ├── Mcp/                   # Model Context Protocol
 ├── WebUI/                 # Web interface (HTML/JS/CSS)
@@ -238,9 +228,7 @@ scripts/
 └── test-integration-api.js
 
 docs/
-├── TRADING.md             # Architecture deep-dive
-├── BACKTESTING_GUIDE.md   # Backtesting usage
-├── CONFIGURABLE_PARAMETERS.md
+├── DOCUMENTATION.md       # Complete documentation
 └── scripts/README_TESTS.md
 ```
 
@@ -249,21 +237,6 @@ docs/
 **Analysis:**
 - `GET /api/v1/analysis?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Multi-timeframe analysis
 - `GET /api/v1/quick-check?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Lightweight check
-
-**Backtesting:**
-- `POST /api/v1/backtest` - Run historical backtest
-  ```json
-  {
-    "symbol": "BTCUSDT",
-    "startDate": "2025-12-01",
-    "endDate": "2026-01-01",
-    "timeframe": "1h",
-    "strategy": {
-      "minConfidence": 0.7,
-      "minQualityScore": 60
-    }
-  }
-  ```
 
 **Market Data:**
 - `GET /api/v1/price/:symbol` - Current price
@@ -279,7 +252,6 @@ Navigate to `http://localhost:3000` after starting the server.
 
 **Available pages:**
 - `/` - Main analysis dashboard
-- `/backtest.html` - Backtesting interface
 
 **Authentication:**
 - Uses HTTP-only cookies (more secure than localStorage)
@@ -298,7 +270,6 @@ Navigate to `http://localhost:3000` after starting the server.
    - "DataProvider initialized with Redis-only cache" (or warning if disabled)
    - "IndicatorService initialized"
    - "MarketAnalysisService initialized"
-   - "BacktestingService initialized (simplified orchestrator)" (lazy-loaded on first backtest)
 
 3. **Monitor API calls:**
    - Each request logs: `{ip} {method} {path} - {status} - {duration}ms`
@@ -324,22 +295,19 @@ Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
 ## Performance Considerations
 
 1. **Redis is critical for production** - Without it, every analysis hits Binance API
-2. **Backtesting without Redis** - Will make thousands of API calls (very slow + rate limit risk)
-3. **Bar count trade-offs:**
+2. **Bar count trade-offs:**
    - Higher counts = more historical context but slower API calls
    - Lower counts = faster but less reliable indicators
    - Current defaults are optimized for balance (see barCounts.js)
 
-4. **Multi-timeframe alignment:**
+3. **Multi-timeframe alignment:**
    - 3 timeframes typical: long (trend), medium (structure), short (entry timing)
    - More timeframes = exponentially more API calls without cache
 
 ## Documentation
 
 Primary docs in `/docs`:
-- `TRADING.md` - Complete architecture explanation (in French)
-- `BACKTESTING_GUIDE.md` - How to use backtesting system
-- `CONFIGURABLE_PARAMETERS.md` - All 62+ configurable parameters
+- `DOCUMENTATION.md` - Complete technical documentation
 - `scripts/README_TESTS.md` - Testing guide
 
 **These docs are comprehensive** - read them before making changes to analysis logic.

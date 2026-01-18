@@ -5,8 +5,7 @@
  * used throughout the enrichers and analysis services.
  *
  * RATIONALE: These periods determine how much historical context is used
- * for various calculations. They should be configurable for backtesting
- * and optimization.
+ * for various calculations. They should be configurable for optimization.
  */
 
 /**

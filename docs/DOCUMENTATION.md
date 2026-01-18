@@ -16,10 +16,9 @@
 4. [Détection de Régime](#4-détection-de-régime)
 5. [Système de Recommandations](#5-système-de-recommandations)
 6. [API REST](#6-api-rest)
-7. [Backtesting](#7-backtesting)
-8. [Authentification](#8-authentification)
-9. [Configuration](#9-configuration)
-10. [Développement](#10-développement)
+7. [Authentification](#7-authentification)
+8. [Configuration](#8-configuration)
+9. [Développement](#9-développement)
 
 ---
 
@@ -34,7 +33,7 @@ Midas est une plateforme d'analyse technique sophistiquée qui transforme des do
 - **Recommandations Automatiques** - TRADE / PREPARE / CAUTION / WAIT avec confiance
 - **Détection de Conflits 3-Niveaux** - High / Moderate / Low severity
 - **Contexte Trading Actionnable** - Scénarios, entries, stops, targets, risk/reward
-- **Support Backtesting** - Analyse historique avec `analysisDate`
+- **Support Analyse Historique** - Visualisation historique avec `analysisDate`
 
 ### Technologies
 
@@ -119,7 +118,6 @@ src/
 │   │   ├── StatisticalContext/  # 6 Enrichers
 │   │   ├── RegimeDetection/
 │   │   └── TradingContext/
-│   └── Backtesting/       # Historical analysis
 ├── OAuth/                 # Authentication
 ├── Mcp/                   # Model Context Protocol
 ├── WebUI/                 # Web interface
@@ -147,9 +145,6 @@ async generateMarketAnalysis({ symbol, timeframes, count, analysisDate })
 
 // Analyse complète avec trading context
 async generateCompleteAnalysis({ symbol, timeframes, count, analysisDate })
-
-// Quick check rapide (100 bars)
-async quickMultiTimeframeCheck({ symbol, timeframes })
 ```
 
 ### StatisticalContextService
@@ -331,29 +326,6 @@ GET /api/v1/context/enriched?symbol=BTCUSDT&timeframes=1d,4h,1h&count=200
 
 **Response:** Analyse complète avec statistical_context, regimes par timeframe, alignment_score, recommandation.
 
-### Quick Check
-
-```http
-GET /api/v1/context/mtf-quick?symbol=BTCUSDT&timeframes=1d,4h,1h
-```
-
-Version simplifiée pour dashboard/alertes temps réel.
-
-### Backtest
-
-```http
-POST /api/v1/backtest
-Content-Type: application/json
-
-{
-  "symbol": "BTCUSDT",
-  "startDate": "2025-12-01",
-  "endDate": "2026-01-01",
-  "timeframe": "1h",
-  "strategy": { "minConfidence": 0.7, "minQualityScore": 60 }
-}
-```
-
 ### Autres Endpoints
 
 | Endpoint | Description |
@@ -365,53 +337,7 @@ Content-Type: application/json
 
 ---
 
-## 7. Backtesting
-
-### Architecture Simplifiée
-
-Le BacktestingService est un **orchestrateur léger** (~462 lignes) qui délègue aux services existants:
-
-```
-BacktestingService (orchestration)
-    ↓
-MarketDataService → DataProvider → Redis → BinanceAdapter
-    ↓
-MarketAnalysisService → StatisticalContext, RegimeDetection, TradingContext
-```
-
-**Avantages:**
-- Pas de duplication de cache (utilise Redis)
-- Pas de duplication de logique OHLCV
-- Traitement parallèle par batches (10 candles/batch)
-
-### Utilisation
-
-```bash
-# Backtest simple
-node scripts/run-backtest.js --symbol BTCUSDT --start 2024-01-01 --end 2024-12-31
-
-# Avec filtres
-node scripts/run-backtest.js --symbol ETHUSDT --confidence 0.7 --quality 70
-```
-
-### Métriques de Performance
-
-| Métrique | Excellent | Bon | Acceptable |
-|----------|-----------|-----|------------|
-| Win Rate | ≥ 60% | 40-60% | < 40% |
-| Profit Factor | ≥ 2.0 | 1.5-2.0 | 1.0-1.5 |
-| Sharpe Ratio | > 2.0 | 1.0-2.0 | 0.5-1.0 |
-| Max Drawdown | < 10% | 10-20% | 20-30% |
-
-### Optimisation Walk-Forward
-
-1. **In-Sample** (ex: 6 mois) - Optimisation paramètres
-2. **Out-of-Sample** (ex: 6 mois) - Validation
-3. Si performance similaire → Paramètres robustes
-
----
-
-## 8. Authentification
+## 7. Authentification
 
 ### WebUI Authentication
 
@@ -455,7 +381,7 @@ OAUTH_REGISTRATION_SECRET_KEY=your_secret_key
 
 ---
 
-## 9. Configuration
+## 8. Configuration
 
 ### Variables d'Environnement
 
@@ -512,7 +438,7 @@ LOG_LEVEL=verbose
 
 ---
 
-## 10. Développement
+## 9. Développement
 
 ### Path Aliases
 
@@ -584,7 +510,7 @@ const data = await dataProvider.loadOHLCV({
 **Redis est critique pour production:**
 - Réduit latence de 2000ms → 50ms
 - Évite rate limiting Binance
-- Essentiel pour backtesting
+- Essentiel pour analyses multi-timeframe intensives
 
 **Recommandations:**
 - Quick check: 100 bars
@@ -611,5 +537,5 @@ const data = await dataProvider.loadOHLCV({
 
 ---
 
-**Documentation générée le:** 2026-01-16
-**Consolidation de:** TRADING.md, BACKTESTING_GUIDE.md, BACKTEST_SIMPLIFICATION.md, CONFIGURABLE_PARAMETERS.md, WEBUI_AUTHENTICATION.md, OAUTH_AKSK_REGISTRATION.md, RegimeDetectionService.md, PATH_ALIASES.md, backtest.md
+**Documentation générée le:** 2026-01-18
+**Consolidation de:** TRADING.md, CONFIGURABLE_PARAMETERS.md, WEBUI_AUTHENTICATION.md, OAUTH_AKSK_REGISTRATION.md, RegimeDetectionService.md, PATH_ALIASES.md

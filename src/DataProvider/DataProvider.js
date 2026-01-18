@@ -205,7 +205,7 @@ export class DataProvider {
 	 * @param {number} [options.count=200] - Number of bars to fetch
 	 * @param {number} [options.from] - Start timestamp
 	 * @param {number} [options.to] - End timestamp
-	 * @param {Date|string|number} [options.analysisDate] - Analysis date for backtesting (bars will end at this date)
+	 * @param {Date|string|number} [options.analysisDate] - Analysis date for historical analysis (bars will end at this date)
 	 * @param {boolean} [options.useCache=true] - Use cached data if available
 	 * @param {boolean} [options.detectGaps=true] - Detect gaps in data
 	 * @returns {Promise<Object>} OHLCV data with metadata
