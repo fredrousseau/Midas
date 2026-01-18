@@ -338,97 +338,11 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketAnalysisService.generateEnrichedContext({
+			return await marketAnalysisService.generateMarketAnalysis({
 				symbol,
 				timeframes: timeframesObj,
 				analysisDate,
 			});
-		})
-	);
-
-	app.get(
-		'/api/v1/context/mtf-quick',
-		asyncHandler(async (req) => {
-			const { symbol, long, medium, short } = req.query;
-			logger.info('GET /api/v1/context/mtf-quick - Quick multi-timeframe check');
-
-			if (!symbol) {
-				const error = new Error('symbol is required');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			// Build timeframes object from query parameters
-			const timeframesObj = {};
-			if (long) timeframesObj.long = long;
-			if (medium) timeframesObj.medium = medium;
-			if (short) timeframesObj.short = short;
-
-			// Validate at least 2 timeframes provided
-			const tfCount = Object.keys(timeframesObj).length;
-			if (tfCount < 2) {
-				const error = new Error('At least 2 timeframes required for multi-timeframe analysis. Example: ?long=1w&medium=1d&short=1h');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			return await marketAnalysisService.quickMultiTimeframeCheck({
-				symbol,
-				timeframes: timeframesObj,
-			});
-		})
-	);
-
-	// ========== Channel : API / Type : BACKTESTING ==========
-
-	app.post(
-		'/api/v1/backtest',
-		asyncHandler(async (req) => {
-			// Support both 'interval' (new) and 'timeframe' (legacy) parameter names
-			const { symbol, startDate, endDate, interval, timeframe } = req.body;
-			const backtestInterval = interval || timeframe || '1h';
-
-			logger.info(`POST /api/v1/backtest - Running backtest for ${symbol} from ${startDate} to ${endDate} (interval: ${backtestInterval})`);
-
-			// Validation
-			if (!symbol) {
-				const error = new Error('symbol is required');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			if (!startDate || !endDate) {
-				const error = new Error('startDate and endDate are required');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			// Validate interval
-			const validIntervals = ['1h', '4h', '1d'];
-			if (!validIntervals.includes(backtestInterval)) {
-				const error = new Error(`Invalid interval: ${backtestInterval}. Must be one of: ${validIntervals.join(', ')}`);
-				error.statusCode = 400;
-				throw error;
-			}
-
-			// Import BacktestingService dynamically
-			const { BacktestingService } = await import('./Trading/Backtesting/BacktestingService.js');
-
-			// Use existing MarketAnalysisService instance
-			const backtestingService = new BacktestingService({
-				logger,
-				marketAnalysisService
-			});
-
-			// Run backtest (service handles date validation)
-			const results = await backtestingService.runBacktest({
-				symbol,
-				startDate,
-				endDate,
-				interval: backtestInterval
-			});
-
-			return results;
 		})
 	);
 
