@@ -51,18 +51,38 @@ export class DataProvider {
 			redisAdapter: redisAdapter,
 		});
 
-		// Connect to Redis and load persisted stats once connected
-		redisAdapter.connect()
-			.then(() => {
-				// Load persisted stats after successful connection
-				this.cacheManager._loadPersistedStats();
-				this.logger.info('DataProvider initialized with Redis-only cache');
-			})
-			.catch((err) => {
-				this.logger.error(`Failed to connect to Redis: ${err.message}`);
-				this.cacheManager = null;
-			});
+		// Store adapter reference for async connection
+		this._redisAdapter = redisAdapter;
+		this._connectionPromise = null;
+		this._isConnected = false;
+
+		// Start connection asynchronously (non-blocking for backward compatibility)
+		this._connectionPromise = this._connectRedis();
 	}
+
+	/**
+	 * Internal method to connect to Redis
+	 * @private
+	 * @returns {Promise<boolean>} True if connected successfully
+	 */
+	async _connectRedis() {
+		if (!this._redisAdapter) return false;
+
+		try {
+			await this._redisAdapter.connect();
+			// Load persisted stats after successful connection
+			await this.cacheManager._loadPersistedStats();
+			this._isConnected = true;
+			this.logger.info('DataProvider initialized with Redis-only cache');
+			return true;
+		} catch (err) {
+			this.logger.error(`Failed to connect to Redis: ${err.message}`);
+			this.cacheManager = null;
+			this._isConnected = false;
+			return false;
+		}
+	}
+
 
 	/**
 	 * Convert timeframe string to milliseconds
@@ -229,8 +249,17 @@ export class DataProvider {
 
 		const startTime = Date.now();
 
+		// Ensure Redis connection is ready before attempting cache operations
+		// This awaits any pending connection without blocking if already connected
+		if (this._connectionPromise && !this._isConnected) {
+			await this._connectionPromise;
+			// Log warning if connection failed after waiting
+			if (!this._isConnected)
+				this.logger.warn('Redis connection failed - proceeding without cache');
+		}
+
 		// Try to get from CacheManager (Redis)
-		if (useCache && this.cacheManager) {
+		if (useCache && this.cacheManager && this._isConnected) {
 			const cacheResult = await this.cacheManager.get(symbol, timeframe, count, analysisTimestamp);
 
 			if (cacheResult.coverage === 'full') {
