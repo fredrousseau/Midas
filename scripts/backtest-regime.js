@@ -1,19 +1,33 @@
-#!/usr/bin/env node
 /**
- * Backtest Regime Detection - Enhanced Version
+ * Backtest Regime Detection - Validation Prédictive
  *
- * Tests regime stability and analyzes all RegimeDetectionService capabilities:
- * - Regime stability over lookforward period
- * - Trend phase correlation (nascent/mature/exhausted vs stability)
- * - Breakout quality correlation (high/medium/low vs persistence)
- * - Volume confirmation effectiveness
- * - Compression detection accuracy
- * - Transition pattern analysis
- * - Scoring component breakdown
+ * OBJECTIF: Mesurer la CAPACITÉ PRÉDICTIVE des régimes détectés.
+ *
+ * MÉTHODOLOGIE (SANS CHEVAUCHEMENT):
+ * - À l'instant T, on détecte le régime avec les données [T-200, T]
+ * - On analyse le mouvement RÉEL du prix sur [T+1, T+N] (données futures)
+ * - On compare: le régime détecté correspond-il au comportement réel du prix ?
+ *
+ * DONNÉES UTILISÉES:
+ *   Détection:  [T-200, T]     → RegimeDetectionService
+ *   Validation: [T+1, T+N]     → Analyse du prix réel (detectTrend, efficiency)
+ *   → AUCUN chevauchement entre détection et validation
+ *
+ * CE QUE MESURE CE TEST:
+ * "Le régime détecté à l'instant T prédit-il correctement ce qui va se passer
+ *  sur les N bougies SUIVANTES ?" (validation prédictive)
+ *
+ * TRANSITIONS ACCEPTÉES COMME SUCCÈS:
+ * - breakout → trending (même direction) = succès (breakout réussi)
+ * - trending → breakout (même direction) = succès (catégories proches)
+ *
+ * BASELINE NAÏVE:
+ * Le script compare les résultats à des stratégies naïves pour mesurer
+ * la valeur ajoutée réelle du système de détection.
  *
  * Usage:
  *   node scripts/backtest-regime.js --symbol BTCUSDT --timeframe 1h --bars 2000
- *   node scripts/backtest-regime.js --symbol ETHUSDT --timeframe 4h --bars 1000 --lookforward 10
+ *   node scripts/backtest-regime.js --symbol ETHUSDT --timeframe 4h --bars 1000 --lookforward 50
  */
 
 // Environment is loaded via import 'dotenv/config' at file top so other modules see process.env
@@ -24,6 +38,7 @@ import { BinanceAdapter } from '../src/DataProvider/BinanceAdapter.js';
 import { IndicatorService } from '../src/Trading/Indicator/IndicatorService.js';
 import { RegimeDetectionService } from '../src/Trading/MarketAnalysis/RegimeDetection/RegimeDetectionService.js';
 import { logger } from '../src/Logger/LoggerService.js';
+import { calculateStats, detectTrend } from '../src/Utils/statisticalHelpers.js';
 
 /* ===========================================================
    CONFIGURATION
@@ -34,16 +49,194 @@ const CONFIG = {
 	warmupBars: 250,        // Indicator warmup
 	batchSize: 50,          // Progress update frequency
 	minSamplesForStats: 10, // Minimum samples for statistical analysis
-};
 
-const REGIMES = [
-	'trending_bullish', 'trending_bearish',
-	'breakout_bullish', 'breakout_bearish', 'breakout_neutral',
-	'range_normal', 'range_low_vol', 'range_high_vol', 'range_directional',
-];
+	// Seuils pour la validation du prix réel
+	trendThreshold: 0.02,      // 2% de mouvement minimum pour confirmer une tendance
+	rangeThreshold: 0.015,     // 1.5% max pour confirmer un range
+	breakoutThreshold: 0.025,  // 2.5% pour confirmer un breakout
+};
 
 const PHASES = ['nascent', 'mature', 'exhausted', 'unknown'];
 const BREAKOUT_GRADES = ['high', 'medium', 'low'];
+
+/* ===========================================================
+   PRICE MOVEMENT ANALYSIS (GROUND TRUTH)
+   =========================================================== */
+
+/**
+ * Analyse le mouvement réel du prix sur les N bougies suivantes
+ * Utilise detectTrend de statisticalHelpers pour une détection robuste
+ * Retourne les caractéristiques objectives du mouvement
+ */
+function analyzePriceMovement(bars, startIdx, lookforward) {
+	const futureBars = bars.slice(startIdx + 1, startIdx + 1 + lookforward);
+	if (futureBars.length < lookforward) return null;
+
+	const startPrice = bars[startIdx].close;
+	const endPrice = futureBars[futureBars.length - 1].close;
+	const futurecloses = futureBars.map(b => b.close);
+	const highestHigh = Math.max(...futureBars.map(b => b.high));
+	const lowestLow = Math.min(...futureBars.map(b => b.low));
+
+	// Calculs de base
+	const netChange = (endPrice - startPrice) / startPrice;
+	const maxDrawup = (highestHigh - startPrice) / startPrice;
+	const maxDrawdown = (startPrice - lowestLow) / startPrice;
+	const totalRange = (highestHigh - lowestLow) / startPrice;
+
+	// Utilise detectTrend de statisticalHelpers pour une détection de tendance robuste
+	// basée sur la régression linéaire (plus fiable que le simple netChange)
+	const trendAnalysis = detectTrend(futurecloses, CONFIG.trendThreshold);
+
+	// Direction basée sur detectTrend (régression linéaire)
+	let actualDirection;
+	if (trendAnalysis.direction === 'rising') actualDirection = 'bullish';
+	else if (trendAnalysis.direction === 'declining') actualDirection = 'bearish';
+	else actualDirection = 'neutral';
+
+	// Efficacité du mouvement (Efficiency Ratio style)
+	// Similaire à RegimeDetectionService._getEfficiencyRatio mais sur données futures
+	const efficiency = totalRange > 0 ? Math.abs(netChange) / totalRange : 0;
+
+	// Détection du type de mouvement réel
+	let actualCategory;
+	if (efficiency > 0.6 && trendAnalysis.strength > CONFIG.trendThreshold)
+		// Mouvement directionnel efficace = tendance
+		actualCategory = 'trending';
+	else if (Math.abs(netChange) > CONFIG.breakoutThreshold && efficiency > 0.4)
+		// Grand mouvement avec efficacité moyenne = breakout
+		actualCategory = 'breakout';
+	else if (totalRange < CONFIG.rangeThreshold * 2)
+		// Peu de mouvement total = range serré
+		actualCategory = 'range';
+	else if (efficiency < 0.3)
+		// Beaucoup de mouvement mais peu de progression nette = range volatile
+		actualCategory = 'range';
+	else
+		// Cas intermédiaires - utilise la force de tendance de detectTrend
+		actualCategory = trendAnalysis.strength > CONFIG.trendThreshold ? 'trending' : 'range';
+
+	// Volatilité sur la période via calculateStats
+	const barRanges = futureBars.map(b => (b.high - b.low) / b.open);
+	const volatilityStats = calculateStats(barRanges);
+
+	return {
+		netChange,           // Variation nette en %
+		netChangePct: (netChange * 100).toFixed(2),
+		actualDirection,     // bullish/bearish/neutral basé sur detectTrend
+		actualCategory,      // trending/breakout/range basé sur le comportement réel
+		maxDrawup,           // Plus haut atteint depuis le départ
+		maxDrawdown,         // Plus bas atteint depuis le départ
+		totalRange,          // Amplitude totale parcourue
+		efficiency,          // Efficacité du mouvement (0-1)
+		trendStrength: trendAnalysis.strength, // Force de tendance (régression linéaire)
+		avgVolatility: volatilityStats?.mean || 0, // Volatilité moyenne par bougie
+		highestHigh,
+		lowestLow,
+		endPrice,
+	};
+}
+
+/**
+ * Compare le régime détecté avec le mouvement réel du prix
+ * Retourne un score de validation
+ *
+ * TRANSITIONS ACCEPTÉES COMME SUCCÈS:
+ * - breakout → trending (même direction) = breakout réussi qui devient tendance
+ * - trending ↔ breakout (même direction) = catégories proches, comportement similaire
+ */
+function validateRegimeVsReality(detected, actual) {
+	// Détection des transitions acceptées comme succès
+	const sameDirection = detected.direction === actual.actualDirection;
+	const isBreakoutToTrend = detected.category === 'breakout' && actual.actualCategory === 'trending' && sameDirection;
+	const isTrendToBreakout = detected.category === 'trending' && actual.actualCategory === 'breakout' && sameDirection;
+	const isSuccessfulTransition = isBreakoutToTrend || isTrendToBreakout;
+
+	const validation = {
+		// Direction correcte ?
+		directionCorrect: detected.direction === actual.actualDirection,
+		directionPartial: detected.direction !== 'neutral' && actual.actualDirection !== 'neutral' &&
+			detected.direction === actual.actualDirection,
+
+		// Catégorie correcte ? (inclut les transitions acceptées)
+		categoryCorrect: detected.category === actual.actualCategory,
+		categoryAccepted: detected.category === actual.actualCategory || isSuccessfulTransition,
+
+		// Transition breakout → trend réussie ?
+		successfulTransition: isSuccessfulTransition,
+		transitionType: isBreakoutToTrend ? 'breakout→trend' : (isTrendToBreakout ? 'trend→breakout' : null),
+
+		// Pour les tendances: le prix a-t-il bougé dans la bonne direction ?
+		trendValidated: false,
+		trendProfit: 0,
+
+		// Pour les breakouts: y a-t-il eu un mouvement significatif ?
+		breakoutValidated: false,
+
+		// Pour les ranges: le prix est-il resté contenu ?
+		rangeValidated: false,
+
+		// Score global de validation (0-100)
+		score: 0,
+	};
+
+	// Validation spécifique par catégorie détectée
+	if (detected.category === 'trending') {
+		// Une tendance est validée si le prix va dans la direction prédite
+		if (detected.direction === 'bullish') {
+			validation.trendValidated = actual.netChange > 0;
+			validation.trendProfit = actual.netChange;
+		} else if (detected.direction === 'bearish') {
+			validation.trendValidated = actual.netChange < 0;
+			validation.trendProfit = -actual.netChange; // Profit si short
+		}
+	} else if (detected.category === 'breakout') {
+		// Un breakout est validé si le mouvement est significatif
+		validation.breakoutValidated = Math.abs(actual.netChange) > CONFIG.breakoutThreshold ||
+			actual.totalRange > CONFIG.breakoutThreshold * 1.5;
+
+		// Bonus si la direction est correcte
+		if (detected.direction !== 'neutral' && validation.breakoutValidated)
+			validation.trendProfit = detected.direction === 'bullish' ? actual.netChange : -actual.netChange;
+
+		// Un breakout qui devient trending dans la même direction = succès total
+		if (isBreakoutToTrend)
+			validation.breakoutValidated = true;
+	} else if (detected.category === 'range') {
+		// Un range est validé si le prix reste contenu
+		validation.rangeValidated = actual.totalRange < CONFIG.rangeThreshold * 3 ||
+			actual.efficiency < 0.4;
+	}
+
+	// Calcul du score global
+	let score = 0;
+
+	// Points pour la catégorie (40 points max)
+	if (validation.categoryCorrect)
+		score += 40;
+	else if (isSuccessfulTransition)
+		// Transition acceptée = presque aussi bon qu'une correspondance exacte
+		score += 35;
+	else if (
+		(detected.category === 'trending' && actual.actualCategory === 'breakout') ||
+		(detected.category === 'breakout' && actual.actualCategory === 'trending')
+	)
+		// Catégories proches mais direction différente
+		score += 15;
+
+	// Points pour la direction (30 points max)
+	if (validation.directionCorrect) score += 30;
+	else if (detected.direction === 'neutral' || actual.actualDirection === 'neutral') score += 15;
+
+	// Points pour la validation spécifique (30 points max)
+	if (detected.category === 'trending' && validation.trendValidated) score += 30;
+	else if (detected.category === 'breakout' && validation.breakoutValidated) score += 30;
+	else if (detected.category === 'range' && validation.rangeValidated) score += 30;
+
+	validation.score = score;
+
+	return validation;
+}
 
 /* ===========================================================
    ENHANCED DATA COLLECTION
@@ -107,41 +300,143 @@ function extractFullData(regimeResult) {
    METRICS COMPUTATION
    =========================================================== */
 
+/**
+ * Calcule les scores de baselines naïves pour comparaison
+ * Permet de mesurer la valeur ajoutée réelle du système de détection
+ */
+function computeNaiveBaselines(results) {
+	const total = results.length;
+	if (total === 0) return null;
+
+	// Baseline 1: "Toujours Range" - prédit toujours un range neutral
+	const alwaysRange = results.filter(r => r.truth.category === 'range').length;
+	const alwaysRangeScore = (alwaysRange / total * 100);
+
+	// Baseline 2: "Toujours Trending" - prédit toujours une tendance
+	const alwaysTrending = results.filter(r => r.truth.category === 'trending').length;
+	const alwaysTrendingScore = (alwaysTrending / total * 100);
+
+	// Baseline 3: "Direction précédente" - prédit que la direction reste la même
+	// Simule: si le prix montait avant T, il continuera à monter
+	let prevDirectionCorrect = 0;
+	for (let i = 1; i < results.length; i++) {
+		const prevDirection = results[i - 1].truth.direction;
+		const currentDirection = results[i].truth.direction;
+		if (prevDirection === currentDirection && prevDirection !== 'neutral')
+			prevDirectionCorrect++;
+	}
+	const prevDirectionScore = results.length > 1 ? (prevDirectionCorrect / (results.length - 1) * 100) : 0;
+
+	// Baseline 4: "Catégorie la plus fréquente" - prédit toujours la catégorie majoritaire
+	const categoryCounts = { trending: 0, breakout: 0, range: 0 };
+	for (const r of results)
+		categoryCounts[r.truth.category] = (categoryCounts[r.truth.category] || 0) + 1;
+	const mostFrequentCategory = Object.entries(categoryCounts).sort((a, b) => b[1] - a[1])[0];
+	const mostFrequentScore = (mostFrequentCategory[1] / total * 100);
+
+	// Baseline 5: "Random" - précision attendue si on choisit au hasard (33% pour 3 catégories)
+	const randomScore = 33.3;
+
+	// Score du système (pour comparaison)
+	const systemCategoryCorrect = results.filter(r => r.predicted.category === r.truth.category).length;
+	const systemScore = (systemCategoryCorrect / total * 100);
+
+	// Score avec transitions acceptées
+	const systemAccepted = results.filter(r => r.validation?.categoryAccepted).length;
+	const systemAcceptedScore = (systemAccepted / total * 100);
+
+	return {
+		alwaysRange: { score: alwaysRangeScore.toFixed(1), count: alwaysRange },
+		alwaysTrending: { score: alwaysTrendingScore.toFixed(1), count: alwaysTrending },
+		prevDirection: { score: prevDirectionScore.toFixed(1), count: prevDirectionCorrect },
+		mostFrequent: { category: mostFrequentCategory[0], score: mostFrequentScore.toFixed(1), count: mostFrequentCategory[1] },
+		random: { score: randomScore.toFixed(1) },
+		system: { score: systemScore.toFixed(1), count: systemCategoryCorrect },
+		systemAccepted: { score: systemAcceptedScore.toFixed(1), count: systemAccepted },
+		// Avantage du système sur les baselines
+		advantage: {
+			vsRandom: (systemScore - randomScore).toFixed(1),
+			vsMostFrequent: (systemScore - mostFrequentScore).toFixed(1),
+			vsPrevDirection: (systemScore - prevDirectionScore).toFixed(1),
+		},
+	};
+}
+
 function computeBasicMetrics(results) {
 	const total = results.length;
 	if (total === 0) return null;
 
-	// Exact match
+	// Exact match (catégorie + direction)
 	const exact = results.filter(r => r.predicted.regime === r.truth.regime).length;
 
 	// Category match
 	const category = results.filter(r => r.predicted.category === r.truth.category).length;
 
-	// Direction comparison (count of cases where both directions are not neutral)
+	// Direction match
 	const directionalPairs = results.filter(r =>
 		r.truth.direction !== 'neutral' && r.predicted.direction !== 'neutral'
 	);
-	const direction = directionalPairs.filter(r =>
+	const directionCorrect = directionalPairs.filter(r =>
 		r.predicted.direction === r.truth.direction
 	).length;
+
+	// Validation scores (basé sur le prix réel)
+	const withValidation = results.filter(r => r.validation);
+	const avgValidationScore = withValidation.length > 0
+		? withValidation.reduce((sum, r) => sum + r.validation.score, 0) / withValidation.length
+		: 0;
+
+	// Validation par type de régime détecté
+	const trendResults = results.filter(r => r.predicted.category === 'trending' && r.validation);
+	const trendValidated = trendResults.filter(r => r.validation.trendValidated).length;
+
+	const breakoutResults = results.filter(r => r.predicted.category === 'breakout' && r.validation);
+	const breakoutValidated = breakoutResults.filter(r => r.validation.breakoutValidated).length;
+
+	const rangeResults = results.filter(r => r.predicted.category === 'range' && r.validation);
+	const rangeValidated = rangeResults.filter(r => r.validation.rangeValidated).length;
+
+	// Profit/Loss moyen sur les tendances (si on avait suivi le signal)
+	const avgTrendProfit = trendResults.length > 0
+		? trendResults.reduce((sum, r) => sum + (r.validation.trendProfit || 0), 0) / trendResults.length
+		: 0;
 
 	// Confidence buckets
 	const highConf = results.filter(r => r.predicted.confidence >= 0.7);
 	const medConf = results.filter(r => r.predicted.confidence >= 0.5 && r.predicted.confidence < 0.7);
 	const lowConf = results.filter(r => r.predicted.confidence < 0.5);
 
-	const highConfCorrect = highConf.filter(r => r.predicted.regime === r.truth.regime).length;
-	const medConfCorrect = medConf.filter(r => r.predicted.regime === r.truth.regime).length;
-	const lowConfCorrect = lowConf.filter(r => r.predicted.regime === r.truth.regime).length;
+	const highConfCorrect = highConf.filter(r => r.predicted.category === r.truth.category).length;
+	const medConfCorrect = medConf.filter(r => r.predicted.category === r.truth.category).length;
+	const lowConfCorrect = lowConf.filter(r => r.predicted.category === r.truth.category).length;
 
 	return {
 		total,
 		exact: { count: exact, pct: (exact / total * 100).toFixed(1) },
 		category: { count: category, pct: (category / total * 100).toFixed(1) },
 		direction: {
-			count: directionalPairs.length,
-			total: total,
-			pct: total > 0 ? (directionalPairs.length / total * 100).toFixed(1) : 'N/A',
+			correct: directionCorrect,
+			total: directionalPairs.length,
+			pct: directionalPairs.length > 0 ? (directionCorrect / directionalPairs.length * 100).toFixed(1) : 'N/A',
+		},
+		validation: {
+			avgScore: avgValidationScore.toFixed(1),
+			trending: {
+				total: trendResults.length,
+				validated: trendValidated,
+				pct: trendResults.length > 0 ? (trendValidated / trendResults.length * 100).toFixed(1) : 'N/A',
+				avgProfit: (avgTrendProfit * 100).toFixed(2),
+			},
+			breakout: {
+				total: breakoutResults.length,
+				validated: breakoutValidated,
+				pct: breakoutResults.length > 0 ? (breakoutValidated / breakoutResults.length * 100).toFixed(1) : 'N/A',
+			},
+			range: {
+				total: rangeResults.length,
+				validated: rangeValidated,
+				pct: rangeResults.length > 0 ? (rangeValidated / rangeResults.length * 100).toFixed(1) : 'N/A',
+			},
 		},
 		confidence: {
 			high: { total: highConf.length, correct: highConfCorrect, pct: highConf.length > 0 ? (highConfCorrect / highConf.length * 100).toFixed(1) : 'N/A' },
@@ -287,82 +582,87 @@ function computeTransitionPatterns(results) {
 	return sorted;
 }
 
-function computeScoringCorrelation(results) {
-	// Analyze which scoring components best predict stability
-	const stable = results.filter(r => r.predicted.regime === r.truth.regime);
-	const unstable = results.filter(r => r.predicted.regime !== r.truth.regime);
+function computeCategorySynthesis(results) {
+	const categories = ['trending', 'breakout', 'range'];
+	const synthesis = {};
 
-	if (stable.length < CONFIG.minSamplesForStats || unstable.length < CONFIG.minSamplesForStats) return null;
+	for (const category of categories) {
+		const categoryResults = results.filter(r => r.predicted.category === category);
+		if (categoryResults.length < CONFIG.minSamplesForStats) continue;
 
-	const components = ['regimeClarity', 'erScore', 'directionScore', 'coherence', 'confidence', 'adx', 'efficiencyRatio'];
+		const exactMatch = categoryResults.filter(r => r.predicted.regime === r.truth.regime).length;
+		const categoryMatch = categoryResults.filter(r => r.predicted.category === r.truth.category).length;
 
-	const analysis = {};
+		// Direction accuracy within category
+		const directionalPairs = categoryResults.filter(r =>
+			r.predicted.direction !== 'neutral' && r.truth.direction !== 'neutral'
+		);
+		const directionMatch = directionalPairs.filter(r => r.predicted.direction === r.truth.direction).length;
 
-	for (const comp of components) {
-		const stableAvg = stable.reduce((s, r) => s + (r.predicted[comp] || 0), 0) / stable.length;
-		const unstableAvg = unstable.reduce((s, r) => s + (r.predicted[comp] || 0), 0) / unstable.length;
-		const diff = stableAvg - unstableAvg;
+		// Average confidence
+		const avgConfidence = categoryResults.reduce((sum, r) => sum + r.predicted.confidence, 0) / categoryResults.length;
 
-		analysis[comp] = {
-			stableAvg: stableAvg.toFixed(3),
-			unstableAvg: unstableAvg.toFixed(3),
-			difference: diff.toFixed(3),
-			predictive: Math.abs(diff) > 0.05 ? (diff > 0 ? 'higher_better' : 'lower_better') : 'neutral',
-		};
-	}
-
-	return analysis;
-}
-
-function computePerRegimeBreakdown(results) {
-	const perRegime = {};
-
-	for (const regime of REGIMES) {
-		const regimeResults = results.filter(r => r.truth.regime === regime);
-		if (regimeResults.length < 3) continue;
-
-		const correct = regimeResults.filter(r => r.predicted.regime === regime).length;
-
-		// What does this regime typically become?
+		// What this category typically becomes
 		const outcomes = {};
-		for (const r of regimeResults) {
-			const pred = r.predicted.regime;
-			outcomes[pred] = (outcomes[pred] || 0) + 1;
+		for (const r of categoryResults) {
+			const truthCat = r.truth.category;
+			outcomes[truthCat] = (outcomes[truthCat] || 0) + 1;
 		}
 
-		// Sort outcomes by frequency
-		const sortedOutcomes = Object.entries(outcomes)
-			.sort((a, b) => b[1] - a[1])
-			.slice(0, 3)
-			.map(([reg, count]) => ({ regime: reg, count, pct: (count / regimeResults.length * 100).toFixed(1) }));
-
-		perRegime[regime] = {
-			total: regimeResults.length,
-			correct,
-			pct: (correct / regimeResults.length * 100).toFixed(1),
-			topOutcomes: sortedOutcomes,
+		synthesis[category] = {
+			total: categoryResults.length,
+			exactMatch: { count: exactMatch, pct: (exactMatch / categoryResults.length * 100).toFixed(1) },
+			categoryMatch: { count: categoryMatch, pct: (categoryMatch / categoryResults.length * 100).toFixed(1) },
+			directionMatch: directionalPairs.length > 0 ? {
+				count: directionMatch,
+				total: directionalPairs.length,
+				pct: (directionMatch / directionalPairs.length * 100).toFixed(1),
+			} : null,
+			avgConfidence: avgConfidence.toFixed(2),
+			outcomes: Object.entries(outcomes)
+				.sort((a, b) => b[1] - a[1])
+				.map(([cat, count]) => ({ category: cat, count, pct: (count / categoryResults.length * 100).toFixed(1) })),
 		};
 	}
 
-	return perRegime;
+	return synthesis;
 }
 
-function computeConfusionMatrix(results) {
-	const confusion = {};
+function computeDirectionSynthesis(results) {
+	const directions = ['bullish', 'bearish', 'neutral'];
+	const synthesis = {};
 
-	for (const r of REGIMES) {
-		confusion[r] = {};
-		for (const c of REGIMES) confusion[r][c] = 0;
+	for (const direction of directions) {
+		const directionResults = results.filter(r => r.predicted.direction === direction);
+		if (directionResults.length < CONFIG.minSamplesForStats) continue;
+
+		const exactMatch = directionResults.filter(r => r.predicted.regime === r.truth.regime).length;
+		const directionMatch = directionResults.filter(r => r.predicted.direction === r.truth.direction).length;
+		const categoryMatch = directionResults.filter(r => r.predicted.category === r.truth.category).length;
+
+		// Average confidence
+		const avgConfidence = directionResults.reduce((sum, r) => sum + r.predicted.confidence, 0) / directionResults.length;
+
+		// What this direction typically becomes
+		const outcomes = {};
+		for (const r of directionResults) {
+			const truthDir = r.truth.direction;
+			outcomes[truthDir] = (outcomes[truthDir] || 0) + 1;
+		}
+
+		synthesis[direction] = {
+			total: directionResults.length,
+			exactMatch: { count: exactMatch, pct: (exactMatch / directionResults.length * 100).toFixed(1) },
+			directionMatch: { count: directionMatch, pct: (directionMatch / directionResults.length * 100).toFixed(1) },
+			categoryMatch: { count: categoryMatch, pct: (categoryMatch / directionResults.length * 100).toFixed(1) },
+			avgConfidence: avgConfidence.toFixed(2),
+			outcomes: Object.entries(outcomes)
+				.sort((a, b) => b[1] - a[1])
+				.map(([dir, count]) => ({ direction: dir, count, pct: (count / directionResults.length * 100).toFixed(1) })),
+		};
 	}
 
-	for (const r of results) {
-		const truth = r.truth.regime;
-		const pred = r.predicted.regime;
-		if (confusion[truth]?.[pred] !== undefined)
-			confusion[truth][pred]++;
-	}
-
-	return confusion;
+	return synthesis;
 }
 
 /* ===========================================================
@@ -380,136 +680,271 @@ function getMostFrequent(arr) {
    =========================================================== */
 
 function displayResults(metrics, config) {
-	const line = '═'.repeat(60);
-	const thinLine = '─'.repeat(60);
+	const line = '═'.repeat(70);
+	const thinLine = '─'.repeat(70);
 
 	console.log(`\n${line}`);
-	console.log('                      BACKTEST RESULTS');
-	console.log(`${line}\n`);
+	console.log('          RAPPORT DE BACKTEST - RÉGIME vs PRIX RÉEL');
+	console.log(`${line}`);
 
-	// Categories and directions reference
-	console.log('CATEGORIES AND DIRECTIONS REFERENCE:');
-	console.log('   Categories: trending (tendance), breakout (percée), range (latéral)');
-	console.log('   Directions: bullish (haussier), bearish (baissier), neutral (neutre)');
+	// ========== MÉTHODOLOGIE ==========
+	console.log(`\n${thinLine}`);
+	console.log('🔬 MÉTHODOLOGIE DU TEST (SANS CHEVAUCHEMENT)');
+	console.log(`${thinLine}`);
 
-	// Basic accuracy
-	console.log('BASIC ACCURACY:');
-	console.log(`  Exact match:      ${metrics.basic.exact.pct}%  (${metrics.basic.exact.count}/${metrics.basic.total})`);
-	console.log(`  Category match:   ${metrics.basic.category.pct}%  (${metrics.basic.category.count}/${metrics.basic.total})`);
-	console.log(`  Direction comparison:  ${metrics.basic.direction.pct}%  (${metrics.basic.direction.count}/${metrics.basic.direction.total})`);
+	console.log(`
+  CE QUE MESURE CE TEST:
+    "Le régime détecté à l'instant T prédit-il correctement
+     ce qui va se passer sur les ${config.lookforward} bougies SUIVANTES ?"
 
-	// Confidence breakdown
-	console.log(`\nCONFIDENCE BREAKDOWN:`);
-	console.log(`  High (≥70%):    ${metrics.basic.confidence.high.pct}%  (${metrics.basic.confidence.high.correct}/${metrics.basic.confidence.high.total})`);
-	console.log(`  Medium (50-70%): ${metrics.basic.confidence.medium.pct}%  (${metrics.basic.confidence.medium.correct}/${metrics.basic.confidence.medium.total})`);
-	console.log(`  Low (<50%):     ${metrics.basic.confidence.low.pct}%  (${metrics.basic.confidence.low.correct}/${metrics.basic.confidence.low.total})`);
+  DONNÉES UTILISÉES:
+    • Détection:  bougies [T-200, T] pour identifier le régime
+    • Validation: bougies [T+1, T+${config.lookforward}] pour vérifier le mouvement réel
+    → AUCUN chevauchement entre détection et validation
 
-	// Phase correlation
-	if (Object.keys(metrics.phaseCorrelation).length > 0) {
+  SEUILS DE VALIDATION:
+    • Tendance confirmée si mouvement > ${(config.trendThreshold * 100).toFixed(1)}%
+    • Range confirmé si amplitude < ${(config.rangeThreshold * 100).toFixed(1)}%
+    • Breakout confirmé si mouvement > ${(config.breakoutThreshold * 100).toFixed(1)}%
+`);
+
+	// ========== GLOSSAIRE ==========
+	console.log(`${thinLine}`);
+	console.log('📖 GLOSSAIRE - COMPRENDRE LES TERMES');
+	console.log(`${thinLine}`);
+	console.log(`
+  CATÉGORIES DE MARCHÉ (ce que fait le prix):
+    • TRENDING  = Tendance : le prix monte ou descend de façon directionnelle
+    • BREAKOUT  = Percée : le prix sort d'une zone de consolidation
+    • RANGE     = Latéral : le prix oscille dans une fourchette sans direction
+
+  SOUS-TYPES DE RANGE (nuances du marché latéral):
+    • range_normal      = Volatilité et ADX normaux (cas par défaut)
+    • range_low_vol     = Basse volatilité + faible efficacité (marché calme, compression)
+    • range_high_vol    = Haute volatilité mais sans direction (agité, erratique)
+    • range_directional = ADX élevé mais mouvement inefficace (faux signaux directionnels)
+
+  DIRECTIONS (où va le prix):
+    • BULLISH   = Haussier : mouvement vers le haut
+    • BEARISH   = Baissier : mouvement vers le bas
+    • NEUTRAL   = Neutre : pas de direction claire
+
+  MÉTRIQUES:
+    • Validation = Le régime détecté correspond-il au mouvement réel du prix ?
+    • Confiance = Certitude du système (0-100%). Plus c'est haut, plus c'est fiable.
+`);
+
+	// ========== RÉSUMÉ GLOBAL ==========
+	console.log(`${thinLine}`);
+	console.log('📊 RÉSUMÉ GLOBAL - PRÉCISION PRÉDICTIVE');
+	console.log(`${thinLine}`);
+
+	const catPct = parseFloat(metrics.basic.category.pct);
+	const avgScore = parseFloat(metrics.basic.validation.avgScore);
+
+	console.log(`
+  Sur ${metrics.basic.total} analyses effectuées:
+
+  ┌─────────────────────────────────────────────────────────────────┐
+  │ SCORE DE VALIDATION MOYEN:          ${metrics.basic.validation.avgScore.padStart(5)}/100                     │
+  │ → Mesure composite: catégorie + direction + validation spécif.  │
+  │                                                                 │
+  │ CATÉGORIE correcte:                 ${metrics.basic.category.pct.padStart(5)}%  (${String(metrics.basic.category.count).padStart(4)}/${metrics.basic.total})    │
+  │ → Le type prédit (trending/breakout/range) = mouvement réel     │
+  │                                                                 │
+  │ DIRECTION correcte:                 ${metrics.basic.direction.pct.padStart(5)}%  (${String(metrics.basic.direction.correct).padStart(4)}/${metrics.basic.direction.total})    │
+  │ → La direction prédite = direction réelle du prix               │
+  └─────────────────────────────────────────────────────────────────┘
+`);
+
+	// Interpretation visuelle
+	let validationIcon, validationText;
+	if (avgScore >= 70) { validationIcon = '🟢'; validationText = 'Excellente précision - Les régimes prédisent bien le marché'; }
+	else if (avgScore >= 55) { validationIcon = '🟡'; validationText = 'Bonne précision - Les régimes sont globalement fiables'; }
+	else if (avgScore >= 40) { validationIcon = '🟠'; validationText = 'Précision moyenne - À utiliser avec prudence'; }
+	else { validationIcon = '🔴'; validationText = 'Faible précision - Les régimes ne prédisent pas bien'; }
+
+	console.log(`  ${validationIcon} ${validationText}`);
+
+	// ========== COMPARAISON AVEC BASELINES NAÏVES ==========
+	if (metrics.baselines) {
 		console.log(`\n${thinLine}`);
-		console.log('TREND PHASE CORRELATION:');
-		console.log('(Does ADX slope predict regime stability?)\n');
+		console.log('📏 COMPARAISON AVEC BASELINES NAÏVES');
+		console.log(`${thinLine}`);
+		console.log('  Question: "Le système fait-il mieux que des stratégies triviales ?"');
+		console.log('');
 
-		for (const [phase, data] of Object.entries(metrics.phaseCorrelation)) {
-			const trendInfo = data.trending ? ` | Trending: ${data.trending.pct}% stable (${data.trending.stable}/${data.trending.total})` : '';
-			console.log(`  ${phase.padEnd(10)} n=${String(data.total).padStart(4)} | Exact: ${data.exactMatch.pct.padStart(5)}% | Cat: ${data.categoryMatch.pct.padStart(5)}% | Avg ADX: ${data.avgADX}${trendInfo}`);
+		const b = metrics.baselines;
+
+		console.log('  ┌───────────────────────────────┬──────────┬─────────────────────────────┐');
+		console.log('  │ Stratégie                     │ Précision│ Description                 │');
+		console.log('  ├───────────────────────────────┼──────────┼─────────────────────────────┤');
+		console.log(`  │ 🎯 SYSTÈME (notre détection)  │ ${b.system.score.padStart(6)}%  │ RegimeDetectionService      │`);
+		console.log(`  │ 🎯 + transitions acceptées    │ ${b.systemAccepted.score.padStart(6)}%  │ breakout↔trend = succès     │`);
+		console.log('  ├───────────────────────────────┼──────────┼─────────────────────────────┤');
+		console.log(`  │ 📊 Catégorie majoritaire      │ ${b.mostFrequent.score.padStart(6)}%  │ Toujours "${b.mostFrequent.category}"        │`);
+		console.log(`  │ 📈 Toujours "trending"        │ ${b.alwaysTrending.score.padStart(6)}%  │ Prédit toujours tendance    │`);
+		console.log(`  │ 📉 Toujours "range"           │ ${b.alwaysRange.score.padStart(6)}%  │ Prédit toujours latéral     │`);
+		console.log(`  │ 🔄 Direction précédente       │ ${b.prevDirection.score.padStart(6)}%  │ Même direction que avant    │`);
+		console.log(`  │ 🎲 Aléatoire                  │ ${b.random.score.padStart(6)}%  │ 1 chance sur 3              │`);
+		console.log('  └───────────────────────────────┴──────────┴─────────────────────────────┘');
+		console.log('');
+
+		// Interprétation
+		const advantage = parseFloat(b.advantage.vsMostFrequent);
+		if (advantage > 10)
+			console.log(`  🟢 Le système bat la meilleure baseline de +${advantage}% (valeur ajoutée significative)`);
+		else if (advantage > 5)
+			console.log(`  🟡 Le système bat la meilleure baseline de +${advantage}% (valeur ajoutée modérée)`);
+		else if (advantage > 0)
+			console.log(`  🟠 Le système bat la meilleure baseline de +${advantage}% (valeur ajoutée faible)`);
+		else
+			console.log(`  🔴 Le système ne bat PAS la baseline majoritaire (${advantage}%)`);
+	}
+
+	// ========== VALIDATION PAR TYPE DE RÉGIME ==========
+	console.log(`\n${thinLine}`);
+	console.log('🎯 VALIDATION PAR TYPE DE RÉGIME DÉTECTÉ');
+	console.log(`${thinLine}`);
+	console.log('  Question: "Quand le système détecte un régime, le prix confirme-t-il ?"');
+	console.log('');
+
+	const v = metrics.basic.validation;
+
+	console.log('  ┌── TRENDING (Tendances détectées)');
+	console.log(`  │   ${v.trending.total} détections de tendance`);
+	console.log(`  │   Validées par le prix: ${v.trending.pct}% (${v.trending.validated}/${v.trending.total})`);
+	console.log(`  │   → Le prix a bougé dans la direction prédite`);
+	if (parseFloat(v.trending.avgProfit) !== 0)
+		console.log(`  │   Profit moyen si suivi: ${v.trending.avgProfit}%`);
+	console.log(`  └${'─'.repeat(60)}`);
+	console.log('');
+
+	console.log('  ┌── BREAKOUT (Percées détectées)');
+	console.log(`  │   ${v.breakout.total} détections de breakout`);
+	console.log(`  │   Validées par le prix: ${v.breakout.pct}% (${v.breakout.validated}/${v.breakout.total})`);
+	console.log(`  │   → Un mouvement significatif (>${(config.breakoutThreshold * 100).toFixed(1)}%) a eu lieu`);
+	console.log(`  └${'─'.repeat(60)}`);
+	console.log('');
+
+	console.log('  ┌── RANGE (Latéraux détectés)');
+	console.log(`  │   ${v.range.total} détections de range`);
+	console.log(`  │   Validées par le prix: ${v.range.pct}% (${v.range.validated}/${v.range.total})`);
+	console.log(`  │   → Le prix est resté contenu sans tendance forte`);
+	console.log(`  └${'─'.repeat(60)}`);
+
+	// ========== SYNTHÈSE PAR CATÉGORIE ==========
+	if (Object.keys(metrics.categorySynthesis).length > 0) {
+		console.log(`\n${thinLine}`);
+		console.log('📈 ANALYSE PAR CATÉGORIE DE MARCHÉ');
+		console.log(`${thinLine}`);
+		console.log('  Question: "Quand le système détecte une catégorie, reste-t-elle stable ?"');
+		console.log('');
+
+		const catLabels = {
+			trending: { name: 'TRENDING (Tendance)', desc: 'Prix en mouvement directionnel' },
+			breakout: { name: 'BREAKOUT (Percée)', desc: 'Sortie de zone de consolidation' },
+			range: { name: 'RANGE (Latéral)', desc: 'Prix oscillant sans direction' },
+		};
+
+		for (const [category, data] of Object.entries(metrics.categorySynthesis)) {
+			const label = catLabels[category];
+			console.log(`  ┌── ${label.name} (${data.total} détections)`);
+			console.log(`  │   ${label.desc}`);
+			console.log(`  │`);
+			console.log(`  │   Stabilité catégorie: ${data.categoryMatch.pct.padStart(5)}%  → Sur ${data.total}, ${data.categoryMatch.count} restent ${category}`);
+			console.log(`  │   Stabilité exacte:    ${data.exactMatch.pct.padStart(5)}%  → Régime précis inchangé`);
+			console.log(`  │   Confiance moyenne:   ${(parseFloat(data.avgConfidence) * 100).toFixed(0)}%`);
+
+			// Transitions
+			const transitions = data.outcomes.filter(o => o.category !== category);
+			if (transitions.length > 0) {
+				console.log(`  │`);
+				console.log(`  │   Quand ça change, ça devient:`);
+				for (const t of transitions)
+					console.log(`  │     → ${t.category}: ${t.pct}% des cas`);
+			}
+			console.log(`  └${'─'.repeat(60)}`);
+			console.log('');
 		}
 	}
 
-	// Breakout quality
-	if (metrics.breakoutQuality) {
-		console.log(`\n${thinLine}`);
-		console.log('BREAKOUT QUALITY CORRELATION:');
-		console.log('(Do high-quality breakouts persist longer?)\n');
+	// ========== SYNTHÈSE PAR DIRECTION ==========
+	if (Object.keys(metrics.directionSynthesis).length > 0) {
+		console.log(`${thinLine}`);
+		console.log('🧭 ANALYSE PAR DIRECTION');
+		console.log(`${thinLine}`);
+		console.log('  Question: "Quand le système détecte une direction, reste-t-elle stable ?"');
+		console.log('');
 
-		if (Object.keys(metrics.breakoutQuality.byGrade).length > 0)
-			for (const [grade, data] of Object.entries(metrics.breakoutQuality.byGrade))
-				console.log(`  ${grade.toUpperCase().padEnd(8)} n=${String(data.total).padStart(3)} | Stable: ${data.exactMatch.pct.padStart(5)}% | →Trend: ${data.outcomes.becameTrending.pct.padStart(5)}% | →Range: ${data.outcomes.becameRange.pct.padStart(5)}% | Avg Score: ${data.avgScore}`);
+		const dirLabels = {
+			bullish: { name: 'BULLISH (Haussier)', icon: '↗️', desc: 'Mouvement vers le haut' },
+			bearish: { name: 'BEARISH (Baissier)', icon: '↘️', desc: 'Mouvement vers le bas' },
+			neutral: { name: 'NEUTRAL (Neutre)', icon: '↔️', desc: 'Pas de direction claire' },
+		};
 
-		// Volume confirmation
-		if (metrics.breakoutQuality.volumeAnalysis.confirmed || metrics.breakoutQuality.volumeAnalysis.notConfirmed) {
-			console.log('\n  Volume Confirmation:');
-			if (metrics.breakoutQuality.volumeAnalysis.confirmed)
-				console.log(`    With volume:    ${metrics.breakoutQuality.volumeAnalysis.confirmed.pct}% stable (${metrics.breakoutQuality.volumeAnalysis.confirmed.stable}/${metrics.breakoutQuality.volumeAnalysis.confirmed.total})`);
-			if (metrics.breakoutQuality.volumeAnalysis.notConfirmed)
-				console.log(`    Without volume: ${metrics.breakoutQuality.volumeAnalysis.notConfirmed.pct}% stable (${metrics.breakoutQuality.volumeAnalysis.notConfirmed.stable}/${metrics.breakoutQuality.volumeAnalysis.notConfirmed.total})`);
-		}
+		for (const [direction, data] of Object.entries(metrics.directionSynthesis)) {
+			const label = dirLabels[direction];
+			console.log(`  ┌── ${label.icon} ${label.name} (${data.total} détections)`);
+			console.log(`  │   ${label.desc}`);
+			console.log(`  │`);
+			console.log(`  │   Direction stable:    ${data.directionMatch.pct.padStart(5)}%  → Sur ${data.total}, ${data.directionMatch.count} gardent cette direction`);
+			console.log(`  │   Catégorie stable:    ${data.categoryMatch.pct.padStart(5)}%  → Le type de marché persiste`);
+			console.log(`  │   Confiance moyenne:   ${(parseFloat(data.avgConfidence) * 100).toFixed(0)}%`);
 
-		// Compression
-		if (metrics.breakoutQuality.compressionAnalysis.withCompression || metrics.breakoutQuality.compressionAnalysis.withoutCompression) {
-			console.log('\n  Prior Compression:');
-			if (metrics.breakoutQuality.compressionAnalysis.withCompression)
-				console.log(`    With compression:    ${metrics.breakoutQuality.compressionAnalysis.withCompression.pct}% stable (${metrics.breakoutQuality.compressionAnalysis.withCompression.stable}/${metrics.breakoutQuality.compressionAnalysis.withCompression.total})`);
-			if (metrics.breakoutQuality.compressionAnalysis.withoutCompression)
-				console.log(`    Without compression: ${metrics.breakoutQuality.compressionAnalysis.withoutCompression.pct}% stable (${metrics.breakoutQuality.compressionAnalysis.withoutCompression.stable}/${metrics.breakoutQuality.compressionAnalysis.withoutCompression.total})`);
+			// Transitions
+			const transitions = data.outcomes.filter(o => o.direction !== direction);
+			if (transitions.length > 0) {
+				console.log(`  │`);
+				console.log(`  │   Quand ça change, ça devient:`);
+				for (const t of transitions)
+					console.log(`  │     → ${t.direction}: ${t.pct}% des cas`);
+			}
+			console.log(`  └${'─'.repeat(60)}`);
+			console.log('');
 		}
 	}
 
-	// Transition patterns
+	// ========== FIABILITÉ PAR NIVEAU DE CONFIANCE ==========
+	console.log(`${thinLine}`);
+	console.log('🎯 FIABILITÉ SELON LE NIVEAU DE CONFIANCE');
+	console.log(`${thinLine}`);
+	console.log('  Question: "Les détections à haute confiance sont-elles plus fiables ?"');
+	console.log('');
+	console.log('  ┌───────────────────┬────────────┬─────────────────────────────────┐');
+	console.log('  │ Niveau confiance  │ Nb analyses│ Régime stable après (précision) │');
+	console.log('  ├───────────────────┼────────────┼─────────────────────────────────┤');
+	console.log(`  │ 🟢 Haute (≥70%)   │ ${String(metrics.basic.confidence.high.total).padStart(6)}     │ ${String(metrics.basic.confidence.high.pct).padStart(5)}% (${metrics.basic.confidence.high.correct}/${metrics.basic.confidence.high.total})                   │`);
+	console.log(`  │ 🟡 Moyenne (50-70)│ ${String(metrics.basic.confidence.medium.total).padStart(6)}     │ ${String(metrics.basic.confidence.medium.pct).padStart(5)}% (${metrics.basic.confidence.medium.correct}/${metrics.basic.confidence.medium.total})                   │`);
+	console.log(`  │ 🔴 Basse (<50%)   │ ${String(metrics.basic.confidence.low.total).padStart(6)}     │ ${String(metrics.basic.confidence.low.pct).padStart(5)}% (${metrics.basic.confidence.low.correct}/${metrics.basic.confidence.low.total})                   │`);
+	console.log('  └───────────────────┴────────────┴─────────────────────────────────┘');
+
+	const highConfPct = parseFloat(metrics.basic.confidence.high.pct || 0);
+	const lowConfPct = parseFloat(metrics.basic.confidence.low.pct || 0);
+	if (highConfPct > lowConfPct + 10)
+		console.log(`\n  💡 Insight: Les détections haute confiance sont ${(highConfPct - lowConfPct).toFixed(0)}% plus fiables`);
+
+	// ========== TRANSITIONS LES PLUS FRÉQUENTES ==========
 	if (metrics.transitions.length > 0) {
 		console.log(`\n${thinLine}`);
-		console.log('TOP REGIME TRANSITIONS:');
-		console.log('(Most common regime changes over lookforward period)\n');
+		console.log('🔄 TRANSITIONS LES PLUS FRÉQUENTES');
+		console.log(`${thinLine}`);
+		console.log('  Les changements de régime les plus courants sur la période:');
+		console.log('');
 
-		for (const t of metrics.transitions.slice(0, 10))
-			console.log(`  ${t.transition.padEnd(40)} ${String(t.count).padStart(4)}x (${t.pct.padStart(4)}%) | Conf: ${t.avgConfidence} | ADX: ${t.avgADX} | Phase: ${t.dominantPhase}`);
-	}
-
-	// Scoring correlation
-	if (metrics.scoringCorrelation) {
-		console.log(`\n${thinLine}`);
-		console.log('SCORING COMPONENT ANALYSIS:');
-		console.log('(Which scores best predict stability?)\n');
-
-		const sorted = Object.entries(metrics.scoringCorrelation)
-			.sort((a, b) => Math.abs(parseFloat(b[1].difference)) - Math.abs(parseFloat(a[1].difference)));
-
-		for (const [comp, data] of sorted) {
-			const indicator = data.predictive === 'higher_better' ? '↑' : data.predictive === 'lower_better' ? '↓' : '─';
-			console.log(`  ${comp.padEnd(18)} Stable: ${data.stableAvg.padStart(6)} | Unstable: ${data.unstableAvg.padStart(6)} | Diff: ${data.difference.padStart(7)} ${indicator}`);
+		for (const t of metrics.transitions.slice(0, 8)) {
+			const [from, to] = t.transition.split(' → ');
+			const bar = '█'.repeat(Math.max(1, Math.round(parseFloat(t.pct))));
+			console.log(`  ${from.padEnd(18)} → ${to.padEnd(18)} ${bar} ${t.pct}% (${t.count}x)`);
 		}
 	}
 
-	// Per-regime breakdown
-	if (Object.keys(metrics.perRegime).length > 0) {
-		console.log(`\n${thinLine}`);
-		console.log('PER-REGIME STABILITY:');
-		console.log('(How stable is each regime over lookforward?)\n');
+	// ========== INSIGHTS CLÉS ==========
+	console.log(`\n${thinLine}`);
+	console.log('💡 INSIGHTS CLÉS');
+	console.log(`${thinLine}`);
 
-		const sortedRegimes = Object.entries(metrics.perRegime).sort((a, b) => parseFloat(b[1].pct) - parseFloat(a[1].pct));
-
-		for (const [regime, data] of sortedRegimes) {
-			const topOutcome = data.topOutcomes[0];
-			const outcomeStr = topOutcome && topOutcome.regime !== regime
-				? ` → often becomes: ${topOutcome.regime} (${topOutcome.pct}%)`
-				: '';
-			console.log(`  ${regime.padEnd(20)} ${data.pct.padStart(5)}% stable (${String(data.correct).padStart(3)}/${String(data.total).padStart(3)})${outcomeStr}`);
-		}
-	}
-
-	// Confusion matrix
-	displayConfusionMatrix(metrics.confusion);
-
-	// Interpretation
-	console.log(`\n${line}`);
-	console.log('INTERPRETATION:');
-	console.log(`\nThis backtest measures: "Will the regime detected now`);
-	console.log(`persist for the next ${config.lookforward} bars?"\n`);
-
-	const exactPct = parseFloat(metrics.basic.exact.pct);
-	const catPct = parseFloat(metrics.basic.category.pct);
-
-	if (exactPct >= 70) console.log('✓ Excellent stability (≥70%): Regimes are highly persistent');
-	else if (exactPct >= 55) console.log('✓ Good stability (55-70%): Regimes are fairly stable');
-	else if (exactPct >= 40) console.log('~ Moderate stability (40-55%): Frequent transitions');
-	else console.log('✗ Low stability (<40%): Regimes are very volatile');
-
-	if (catPct >= 80) console.log('✓ Categories stable (≥80%): trending/range/breakout persist well');
-	else if (catPct >= 65) console.log('~ Categories moderately stable (65-80%)');
-	else console.log('✗ Categories unstable (<65%): Frequent type changes');
-
-	// Key insights
-	console.log('\nKEY INSIGHTS:');
+	const insights = [];
 
 	// Phase insight
 	const phaseData = metrics.phaseCorrelation;
@@ -517,9 +952,9 @@ function displayResults(metrics, config) {
 		const nascentPct = parseFloat(phaseData.nascent.exactMatch.pct);
 		const exhaustedPct = parseFloat(phaseData.exhausted.exactMatch.pct);
 		if (nascentPct > exhaustedPct + 10)
-			console.log(`  • Nascent trends are ${(nascentPct - exhaustedPct).toFixed(0)}% more stable than exhausted ones`);
+			insights.push(`Les tendances naissantes sont ${(nascentPct - exhaustedPct).toFixed(0)}% plus stables que les tendances épuisées`);
 		else if (exhaustedPct > nascentPct + 10)
-			console.log(`  • Exhausted trends are surprisingly ${(exhaustedPct - nascentPct).toFixed(0)}% more stable`);
+			insights.push(`Les tendances épuisées sont étonnamment ${(exhaustedPct - nascentPct).toFixed(0)}% plus stables`);
 	}
 
 	// Volume insight
@@ -529,50 +964,60 @@ function displayResults(metrics, config) {
 			const withVol = parseFloat(va.confirmed.pct);
 			const withoutVol = parseFloat(va.notConfirmed.pct);
 			if (withVol > withoutVol + 10)
-				console.log(`  • Volume-confirmed breakouts are ${(withVol - withoutVol).toFixed(0)}% more stable`);
+				insights.push(`Les breakouts confirmés par le volume sont ${(withVol - withoutVol).toFixed(0)}% plus stables`);
 		}
 	}
 
 	// Confidence insight
-	const highConfPct = parseFloat(metrics.basic.confidence.high.pct || 0);
-	const lowConfPct = parseFloat(metrics.basic.confidence.low.pct || 0);
 	if (highConfPct > lowConfPct + 15)
-		console.log(`  • High-confidence detections are ${(highConfPct - lowConfPct).toFixed(0)}% more reliable`);
+		insights.push(`Les détections haute confiance sont ${(highConfPct - lowConfPct).toFixed(0)}% plus fiables que les basses`);
+
+	// Category insights
+	if (metrics.categorySynthesis.trending && metrics.categorySynthesis.range) {
+		const trendStab = parseFloat(metrics.categorySynthesis.trending.categoryMatch.pct);
+		const rangeStab = parseFloat(metrics.categorySynthesis.range.categoryMatch.pct);
+		if (trendStab > rangeStab + 10)
+			insights.push(`Les tendances sont ${(trendStab - rangeStab).toFixed(0)}% plus stables que les ranges`);
+		else if (rangeStab > trendStab + 10)
+			insights.push(`Les ranges sont ${(rangeStab - trendStab).toFixed(0)}% plus stables que les tendances`);
+	}
+
+	if (insights.length === 0)
+		insights.push('Pas de différence significative détectée entre les différents facteurs');
+
+	for (const insight of insights)
+		console.log(`  • ${insight}`);
+
+	// ========== CONCLUSION ==========
+	console.log(`\n${line}`);
+	console.log('📋 CONCLUSION');
+	console.log(`${line}`);
+
+	console.log(`
+  QUESTION TESTÉE:
+  "Le régime détecté à l'instant T prédit-il correctement
+   le mouvement du prix sur les ${config.lookforward} bougies suivantes ?"
+
+  ✓ Aucun chevauchement de données entre détection et validation
+`);
+
+	if (avgScore >= 70)
+		console.log('  ✅ EXCELLENT: Les régimes prédisent bien le comportement du marché.');
+	else if (avgScore >= 55)
+		console.log('  ✅ BON: Les régimes sont globalement prédictifs. Privilégiez les hautes confiances.');
+	else if (avgScore >= 40)
+		console.log('  ⚠️  MOYEN: Précision limitée, à utiliser avec d\'autres confirmations.');
+	else
+		console.log('  ❌ FAIBLE: Les régimes ne prédisent pas bien le marché.');
+
+	if (catPct >= 60)
+		console.log('  ✅ Les catégories (trending/range/breakout) sont souvent correctes.');
+	else if (catPct >= 45)
+		console.log('  ⚠️  Les catégories sont parfois incorrectes.');
+	else
+		console.log('  ❌ Les catégories prédites ne correspondent pas au mouvement réel.');
 
 	console.log(`\n${line}\n`);
-}
-
-function displayConfusionMatrix(confusion) {
-	const activeRegimes = REGIMES.filter(r =>
-		Object.values(confusion[r]).some(v => v > 0) ||
-		REGIMES.some(r2 => confusion[r2][r] > 0)
-	);
-
-	if (activeRegimes.length === 0) return;
-
-	console.log(`\n${'─'.repeat(60)}`);
-	console.log('CONFUSION MATRIX (truth → predicted):');
-
-	const shortName = {
-		trending_bullish: 'TR_BUL', trending_bearish: 'TR_BEA',
-		breakout_bullish: 'BK_BUL', breakout_bearish: 'BK_BEA', breakout_neutral: 'BK_NEU',
-		range_normal: 'RG_NOR', range_low_vol: 'RG_LOW', range_high_vol: 'RG_HIG', range_directional: 'RG_DIR',
-	};
-
-	// Header
-	process.stdout.write('\n              ');
-	for (const r of activeRegimes) process.stdout.write(shortName[r].padStart(8));
-	console.log();
-
-	// Rows
-	for (const truth of activeRegimes) {
-		process.stdout.write(`  ${shortName[truth].padEnd(10)}  `);
-		for (const pred of activeRegimes) {
-			const val = confusion[truth][pred] || 0;
-			process.stdout.write(val.toString().padStart(8));
-		}
-		console.log();
-	}
 }
 
 /* ===========================================================
@@ -592,13 +1037,13 @@ async function main() {
 	CONFIG.lookforward = parseInt(getArg('lookforward', String(CONFIG.lookforward)));
 
 	console.log('\n' + '═'.repeat(60));
-	console.log('         ENHANCED REGIME STABILITY BACKTEST');
+	console.log('      BACKTEST RÉGIME vs PRIX RÉEL (SANS CHEVAUCHEMENT)');
 	console.log('═'.repeat(60));
 	console.log(`Symbol: ${symbol}  |  Timeframe: ${timeframe}  |  Bars: ${barsToLoad}`);
 	console.log(`Lookforward: ${CONFIG.lookforward} bars  |  Warmup: ${CONFIG.warmupBars} bars`);
 	console.log('');
-	console.log('Testing: Regime(t) vs Regime(t + lookforward)');
-	console.log('Analyzing: Phase, Volume, Compression, Quality, Transitions');
+	console.log('Testing: Régime détecté à T vs Mouvement réel du prix [T+1, T+N]');
+	console.log('Seuils: Trend >' + (CONFIG.trendThreshold * 100) + '%, Range <' + (CONFIG.rangeThreshold * 100) + '%, Breakout >' + (CONFIG.breakoutThreshold * 100) + '%');
 	console.log('═'.repeat(60) + '\n');
 
 	// Initialize services
@@ -642,40 +1087,46 @@ async function main() {
 	let errors = 0;
 
 	console.log(`Processing ${totalSamples} samples...`);
-	console.log(`(2 regime detections per sample: current + future)\n`);
+	console.log(`(1 détection de régime + analyse du prix réel par sample)\n`);
 
 	const startTime = Date.now();
 
 	for (let i = startIdx; i < endIdx; i++) {
 		const currentDate = new Date(ohlcv.bars[i].timestamp).toISOString();
-		const futureDate = new Date(ohlcv.bars[i + CONFIG.lookforward].timestamp).toISOString();
 
 		try {
-			// Current regime detection (what the service predicts)
-			const predictedRegime = await regimeService.detectRegime({
+			// Détection du régime à l'instant T
+			// Utilise les données de [T-200, T] pour déterminer le régime
+			const currentRegime = await regimeService.detectRegime({
 				symbol,
 				timeframe,
 				count: 200,
 				analysisDate: currentDate,
 			});
 
-			// Future regime detection (ground truth)
-			const futureRegime = await regimeService.detectRegime({
-				symbol,
-				timeframe,
-				count: 200,
-				analysisDate: futureDate,
-			});
+			// Analyse du mouvement RÉEL du prix sur les N bougies suivantes [T+1, T+N]
+			// AUCUN chevauchement avec les données utilisées pour la détection
+			const priceMovement = analyzePriceMovement(ohlcv.bars, i, CONFIG.lookforward);
 
-			const predictedData = extractFullData(predictedRegime);
-			const truthData = extractFullData(futureRegime);
+			const detectedData = extractFullData(currentRegime);
 
-			if (predictedData && truthData)
+			if (detectedData && priceMovement) {
+				// Valider le régime détecté contre la réalité
+				const validation = validateRegimeVsReality(detectedData, priceMovement);
+
 				results.push({
-					predicted: predictedData,
-					truth: truthData,
+					predicted: detectedData,        // régime détecté à T
+					truth: {                        // "vérité terrain" basée sur le prix réel
+						regime: `${priceMovement.actualCategory}_${priceMovement.actualDirection}`,
+						category: priceMovement.actualCategory,
+						direction: priceMovement.actualDirection,
+						confidence: priceMovement.efficiency, // utilise l'efficacité comme proxy
+					},
+					priceMovement,                  // données brutes du mouvement
+					validation,                     // résultat de la validation
 					timestamp: currentDate,
 				});
+			}
 			processed++;
 
 			if (processed % CONFIG.batchSize === 0) {
@@ -702,12 +1153,12 @@ async function main() {
 	// Compute all metrics
 	const metrics = {
 		basic: computeBasicMetrics(results),
+		baselines: computeNaiveBaselines(results),
+		categorySynthesis: computeCategorySynthesis(results),
+		directionSynthesis: computeDirectionSynthesis(results),
 		phaseCorrelation: computePhaseCorrelation(results),
 		breakoutQuality: computeBreakoutQualityCorrelation(results),
 		transitions: computeTransitionPatterns(results),
-		scoringCorrelation: computeScoringCorrelation(results),
-		perRegime: computePerRegimeBreakdown(results),
-		confusion: computeConfusionMatrix(results),
 	};
 
 	// Display results
