@@ -12,6 +12,7 @@ let indicatorDescriptions = new Map(); // Map indicator key to description
 let seriesDisplayNames = new Map(); // Map series key to display name for data panel
 let appTimezone = 'Europe/Paris'; // Default, will be loaded from API
 let isSyncingCharts = false; // Flag to prevent circular sync
+let originalTimestampMap = new Map(); // Map chart time (seconds) to original UTC timestamp (ms)
 
 // Import auth client (will be loaded via script tag)
 let authClient = null;
@@ -330,6 +331,309 @@ async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}, a
 	return result.data || result;
 }
 
+async function fetchRegime(symbol, timeframe, count, analysisDate = null) {
+	let url = `${API_BASE}/api/v1/regime?symbol=${symbol}&timeframe=${timeframe}&count=${count}`;
+	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
+
+	const response = await authenticatedFetch(url);
+	if (!response.ok) {
+		const error = await response.json();
+		throw new Error(error.error?.message || error.error || 'Failed to fetch regime');
+	}
+	const result = await response.json();
+	return result.data || result;
+}
+
+// Regime visualization state
+let regimePriceLines = [];
+let regimeMarkers = [];
+let regimeHighlightSeries = null;
+
+function clearRegimeVisualization() {
+	// Remove price lines
+	regimePriceLines.forEach(line => {
+		try {
+			candlestickSeries.removePriceLine(line);
+		} catch (e) {
+			console.debug('Could not remove price line:', e);
+		}
+	});
+	regimePriceLines = [];
+
+	// Clear markers
+	if (candlestickSeries) candlestickSeries.setMarkers([]);
+	regimeMarkers = [];
+
+	// Remove highlight series
+	if (regimeHighlightSeries && mainChart) {
+		try {
+			mainChart.removeSeries(regimeHighlightSeries);
+		} catch (e) {
+			console.debug('Could not remove highlight series:', e);
+		}
+		regimeHighlightSeries = null;
+	}
+
+	// Clear regime data in panel
+	if (typeof clearRegimeInPanel === 'function') clearRegimeInPanel();
+}
+
+function displayRegimeOnChart(regimeData, barTime) {
+	clearRegimeVisualization();
+
+	if (!regimeData || !candlestickSeries) return;
+
+	const { regime, regime_components, range_bounds } = regimeData;
+
+	// Determine direction from regime name
+	const isBullish = regime.includes('bull');
+	const isBearish = regime.includes('bear');
+	const isRange = regime.includes('range');
+
+	// Get the candle data for the selected bar to create highlight
+	const candleData = currentClickedData?.candleData;
+	if (candleData && mainChart) {
+		// Determine highlight color based on regime
+		let highlightColor;
+		if (isBullish) highlightColor = 'rgba(8, 153, 129, 0.3)'; // Green transparent
+		else if (isBearish) highlightColor = 'rgba(242, 54, 69, 0.3)'; // Red transparent
+		else if (isRange) highlightColor = 'rgba(255, 193, 7, 0.3)'; // Yellow/orange transparent
+		else highlightColor = 'rgba(120, 123, 134, 0.3)'; // Gray transparent
+
+		// Create a histogram series to highlight the bar
+		regimeHighlightSeries = mainChart.addHistogramSeries({
+			color: highlightColor,
+			priceFormat: { type: 'price' },
+			priceScaleId: '', // Overlay on main price scale
+			lastValueVisible: false,
+			priceLineVisible: false
+		});
+
+		// Set data point at the bar location
+		regimeHighlightSeries.setData([{
+			time: barTime,
+			value: candleData.high,
+			color: highlightColor
+		}]);
+	}
+
+	// Add direction marker (arrow) on the selected bar
+	if (isBullish || isBearish) {
+		const marker = {
+			time: barTime,
+			position: isBullish ? 'belowBar' : 'aboveBar',
+			color: isBullish ? '#089981' : '#F23645',
+			shape: isBullish ? 'arrowUp' : 'arrowDown',
+			text: regime.replace(/_/g, ' ').toUpperCase()
+		};
+		regimeMarkers.push(marker);
+		candlestickSeries.setMarkers(regimeMarkers);
+	} else if (isRange) {
+		// For range regimes, add a square marker
+		const marker = {
+			time: barTime,
+			position: 'aboveBar',
+			color: '#FFC107',
+			shape: 'square',
+			text: regime.replace(/_/g, ' ').toUpperCase()
+		};
+		regimeMarkers.push(marker);
+		candlestickSeries.setMarkers(regimeMarkers);
+	}
+
+	// Add horizontal lines for range bounds
+	if (isRange && range_bounds && range_bounds.high && range_bounds.low) {
+		const highLine = candlestickSeries.createPriceLine({
+			price: range_bounds.high,
+			color: '#F23645',
+			lineWidth: 2,
+			lineStyle: LightweightCharts.LineStyle.Dashed,
+			axisLabelVisible: true,
+			title: `R: ${range_bounds.high.toFixed(2)}`
+		});
+		regimePriceLines.push(highLine);
+
+		const lowLine = candlestickSeries.createPriceLine({
+			price: range_bounds.low,
+			color: '#089981',
+			lineWidth: 2,
+			lineStyle: LightweightCharts.LineStyle.Dashed,
+			axisLabelVisible: true,
+			title: `S: ${range_bounds.low.toFixed(2)}`
+		});
+		regimePriceLines.push(lowLine);
+
+		// Add midpoint line
+		if (range_bounds.midpoint) {
+			const midLine = candlestickSeries.createPriceLine({
+				price: range_bounds.midpoint,
+				color: '#787B86',
+				lineWidth: 1,
+				lineStyle: LightweightCharts.LineStyle.Dotted,
+				axisLabelVisible: true,
+				title: 'Mid'
+			});
+			regimePriceLines.push(midLine);
+		}
+	}
+
+	// Show regime info in status
+	let statusText = `Régime: ${regime.replace(/_/g, ' ').toUpperCase()}`;
+	if (regime_components?.confidence) statusText += ` (${(regime_components.confidence * 100).toFixed(0)}%)`;
+	if (isRange && range_bounds) statusText += ` | Range: ${range_bounds.low?.toFixed(2)} - ${range_bounds.high?.toFixed(2)}`;
+	showStatus(statusText, 'success');
+}
+
+async function analyzeRegime() {
+	// Check if we have a selected bar
+	if (!currentClickedData || !currentClickedData.time) {
+		showStatus('Sélectionnez d\'abord une bougie en cliquant dessus', 'error');
+		return;
+	}
+
+	const symbol = document.getElementById('symbol').value;
+	const timeframe = document.getElementById('timeframe').value;
+	const bars = document.getElementById('bars').value;
+
+	// Get original UTC timestamp from the map (populated during data transformation)
+	const barTimestamp = originalTimestampMap.get(currentClickedData.time);
+	if (!barTimestamp) {
+		showStatus('Impossible de récupérer le timestamp original', 'error');
+		return;
+	}
+	const analysisDate = new Date(barTimestamp).toISOString();
+
+	showStatus('Analyse du régime en cours...', 'loading');
+
+	try {
+		const regimeData = await fetchRegime(symbol, timeframe, bars, analysisDate);
+		displayRegimeOnChart(regimeData, currentClickedData.time);
+		// Update data panel with regime info
+		if (typeof updateRegimeInPanel === 'function') updateRegimeInPanel(regimeData);
+		console.log('Regime data:', regimeData);
+	} catch (error) {
+		showStatus(`Erreur: ${error.message}`, 'error');
+		console.error('Regime analysis error:', error);
+	}
+}
+
+// Analyze regime for all visible bars and display direction arrows
+async function analyzeAllRegimes() {
+	clearRegimeVisualization();
+
+	const symbol = document.getElementById('symbol').value;
+	const timeframe = document.getElementById('timeframe').value;
+
+	// Get confidence threshold from input (default 50%)
+	const confidenceInput = document.getElementById('confidenceThreshold');
+	const minConfidence = (confidenceInput ? parseFloat(confidenceInput.value) : 50) / 100;
+
+	// Get all chart times from the timestamp map
+	const chartTimes = Array.from(originalTimestampMap.keys()).sort((a, b) => a - b);
+
+	if (chartTimes.length === 0) {
+		showStatus('Aucune donnée à analyser', 'error');
+		return;
+	}
+
+	showStatus(`Analyse des régimes (confiance ≥ ${Math.round(minConfidence * 100)}%)...`, 'loading');
+
+	const markers = [];
+	let processed = 0;
+	let errors = 0;
+	let filteredOut = 0;
+
+	// Process bars in batches to avoid overwhelming the API
+	const batchSize = 10;
+	const delayBetweenBatches = 100; // ms
+
+	for (let i = 0; i < chartTimes.length; i += batchSize) {
+		const batch = chartTimes.slice(i, i + batchSize);
+
+		const batchPromises = batch.map(async (chartTime) => {
+			const originalTimestamp = originalTimestampMap.get(chartTime);
+			if (!originalTimestamp) return { marker: null, filtered: false };
+
+			try {
+				const analysisDate = new Date(originalTimestamp).toISOString();
+				// Use fewer bars for faster analysis (50 is enough for regime detection)
+				const regimeData = await fetchRegime(symbol, timeframe, 50, analysisDate);
+
+				if (regimeData && regimeData.direction) {
+					const confidence = regimeData.confidence || 0;
+					const isBullish = regimeData.direction === 'bullish';
+					const isBearish = regimeData.direction === 'bearish';
+
+					// Only show markers if confidence meets threshold
+					if ((isBullish || isBearish) && confidence >= minConfidence) {
+						return {
+							marker: {
+								time: chartTime,
+								position: isBullish ? 'belowBar' : 'aboveBar',
+								color: isBullish ? '#089981' : '#F23645',
+								shape: isBullish ? 'arrowUp' : 'arrowDown',
+								size: 1
+							},
+							filtered: false
+						};
+					} else if (isBullish || isBearish) {
+						// Direction detected but confidence too low
+						return { marker: null, filtered: true };
+					}
+				}
+				return { marker: null, filtered: false };
+			} catch (error) {
+				console.warn(`Regime analysis failed for bar at ${chartTime}:`, error.message);
+				return { marker: null, filtered: false, error: true };
+			}
+		});
+
+		const results = await Promise.all(batchPromises);
+		results.forEach(result => {
+			if (result.marker) markers.push(result.marker);
+			if (result.filtered) filteredOut++;
+			if (result.error) errors++;
+		});
+
+		processed += batch.length;
+		showStatus(`Analyse des régimes: ${processed}/${chartTimes.length} barres...`, 'loading');
+
+		// Small delay between batches to prevent rate limiting
+		if (i + batchSize < chartTimes.length) {
+			await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+		}
+	}
+
+	// Sort markers by time and set them on the chart
+	markers.sort((a, b) => a.time - b.time);
+	regimeMarkers = markers;
+
+	if (candlestickSeries) {
+		candlestickSeries.setMarkers(markers);
+	}
+
+	const bullishCount = markers.filter(m => m.shape === 'arrowUp').length;
+	const bearishCount = markers.filter(m => m.shape === 'arrowDown').length;
+	const neutralCount = chartTimes.length - bullishCount - bearishCount - filteredOut;
+
+	let statusMsg = `Régimes (≥${Math.round(minConfidence * 100)}%): ${bullishCount} ↑, ${bearishCount} ↓`;
+	if (filteredOut > 0) statusMsg += `, ${filteredOut} filtrés`;
+	if (neutralCount > 0) statusMsg += `, ${neutralCount} neutres`;
+	if (errors > 0) statusMsg += ` (${errors} erreurs)`;
+
+	showStatus(statusMsg, 'success');
+
+	console.log('All regimes analyzed:', {
+		total: chartTimes.length,
+		bullish: bullishCount,
+		bearish: bearishCount,
+		neutral: neutralCount,
+		filteredOut,
+		errors,
+		minConfidence
+	});
+}
+
 // Data transformation
 function transformOHLCVtoCandles(ohlcvData) {
 	// LightweightCharts displays timestamps in browser local time
@@ -351,14 +655,21 @@ function transformOHLCVtoCandles(ohlcvData) {
 	// Support both old (bars) and new (data) format
 	const dataSource = ohlcvData.data || ohlcvData.bars || [];
 
+	// Clear and rebuild the timestamp map
+	originalTimestampMap.clear();
+
 	return dataSource.map((item) => {
 		// New format: { timestamp, values: { open, high, low, close, volume } }
 		// Old format: { timestamp, open, high, low, close, volume }
 		const timestamp = item.timestamp;
 		const values = item.values || item;
+		const chartTime = (timestamp + configuredOffset) / 1000;
+
+		// Store mapping from chart time to original UTC timestamp
+		originalTimestampMap.set(chartTime, timestamp);
 
 		return {
-			time: (timestamp + configuredOffset) / 1000, // Add timezone offset and convert to seconds
+			time: chartTime,
 			open: values.open,
 			high: values.high,
 			low: values.low,
@@ -941,6 +1252,10 @@ async function tryInitCharts() {
 
 			// Build indicator UI from catalog
 			buildIndicatorUI();
+
+			// Setup regime button - analyzes all bars
+			const regimeBtn = document.getElementById('regimeBtn');
+			if (regimeBtn) regimeBtn.addEventListener('click', analyzeAllRegimes);
 		} catch (error) {
 			console.error('Failed to initialize charts:', error);
 		}
