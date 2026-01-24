@@ -4,8 +4,8 @@
  */
 
 import { round } from '#utils/statisticalHelpers.js';
-import { getBarCount } from '../../config/barCounts.js';
-import { STATISTICAL_PERIODS, VOLUME_PERIODS } from '../../config/lookbackPeriods.js';
+import { getBarCount } from '../config/barCounts.js';
+import { STATISTICAL_PERIODS, VOLUME_PERIODS } from '../config/lookbackPeriods.js';
 
 export class VolumeEnricher {
 	constructor(options = {}) {

@@ -4,7 +4,7 @@
  */
 
 import { round } from '#utils/statisticalHelpers.js';
-import { STATISTICAL_PERIODS, TREND_PERIODS, PATTERN_PERIODS, SUPPORT_RESISTANCE_PERIODS } from '../../config/lookbackPeriods.js';
+import { STATISTICAL_PERIODS, TREND_PERIODS, PATTERN_PERIODS, SUPPORT_RESISTANCE_PERIODS } from '../config/lookbackPeriods.js';
 
 export class PriceActionEnricher {
 	constructor(options = {}) {

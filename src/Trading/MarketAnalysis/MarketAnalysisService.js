@@ -8,8 +8,8 @@
  * - generateForLLM(): Optimized format for LLM decision-making
  */
 
-import StatisticalContextService from './StatisticalContext/StatisticalContextService.js';
-import { RegimeDetectionService } from './RegimeDetection/RegimeDetectionService.js';
+import StatisticalContextService from './StatisticalContextService.js';
+import { RegimeDetectionService } from './RegimeDetectionService.js';
 
 export class MarketAnalysisService {
 	constructor(parameters = {}) {

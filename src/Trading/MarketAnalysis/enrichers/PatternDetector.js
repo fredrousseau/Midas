@@ -10,7 +10,7 @@
  */
 
 import { round } from '#utils/statisticalHelpers.js';
-import { PATTERN_PERIODS, PATTERN_ATR_MULTIPLIERS, VOLUME_PERIODS } from '../../config/lookbackPeriods.js';
+import { PATTERN_PERIODS, PATTERN_ATR_MULTIPLIERS, VOLUME_PERIODS } from '../config/lookbackPeriods.js';
 
 export class PatternDetector {
 	constructor(options = {}) {

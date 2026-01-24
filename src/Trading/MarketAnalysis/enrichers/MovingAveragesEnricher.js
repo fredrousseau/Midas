@@ -7,8 +7,8 @@
  */
 
 import { round } from '#utils/statisticalHelpers.js';
-import { getBarCount } from '../../config/barCounts.js';
-import { STATISTICAL_PERIODS, TREND_PERIODS } from '../../config/lookbackPeriods.js';
+import { getBarCount } from '../config/barCounts.js';
+import { STATISTICAL_PERIODS, TREND_PERIODS } from '../config/lookbackPeriods.js';
 
 export class MovingAveragesEnricher {
 	constructor(options = {}) {
