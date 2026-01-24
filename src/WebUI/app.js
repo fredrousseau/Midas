@@ -287,7 +287,7 @@ async function authenticatedFetch(url, options = {}) {
 
 // API calls
 async function fetchConfig() {
-	const response = await authenticatedFetch(`${API_BASE}/api/v1/config`);
+	const response = await authenticatedFetch(`${API_BASE}/api/v1/utility/config`);
 	if (!response.ok) throw new Error('Failed to fetch config');
 
 	const result = await response.json();
@@ -295,7 +295,7 @@ async function fetchConfig() {
 }
 
 async function fetchCatalog() {
-	const response = await authenticatedFetch(`${API_BASE}/api/v1/catalog`);
+	const response = await authenticatedFetch(`${API_BASE}/api/v1/indicators/catalog`);
 	if (!response.ok) throw new Error('Failed to fetch catalog');
 
 	const result = await response.json();
@@ -303,7 +303,7 @@ async function fetchCatalog() {
 }
 
 async function fetchOHLCV(symbol, timeframe, bars, analysisDate = null) {
-	let url = `${API_BASE}/api/v1/ohlcv?symbol=${symbol}&timeframe=${timeframe}&count=${bars}`;
+	let url = `${API_BASE}/api/v1/market-data/ohlcv?symbol=${symbol}&timeframe=${timeframe}&count=${bars}`;
 	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
 
 	const response = await authenticatedFetch(url);
@@ -318,7 +318,7 @@ async function fetchOHLCV(symbol, timeframe, bars, analysisDate = null) {
 
 async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}, analysisDate = null) {
 	const configParam = encodeURIComponent(JSON.stringify(config));
-	let url = `${API_BASE}/api/v1/indicators/${indicator}?symbol=${symbol}&timeframe=${timeframe}&bars=${bars}&config=${configParam}`;
+	let url = `${API_BASE}/api/v1/indicators/${indicator}/series?symbol=${symbol}&timeframe=${timeframe}&bars=${bars}&config=${configParam}`;
 	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
 
 	const response = await authenticatedFetch(url);
@@ -332,7 +332,7 @@ async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}, a
 }
 
 async function fetchRegime(symbol, timeframe, count, analysisDate = null) {
-	let url = `${API_BASE}/api/v1/regime?symbol=${symbol}&timeframe=${timeframe}&count=${count}`;
+	let url = `${API_BASE}/api/v1/regime/detect?symbol=${symbol}&timeframe=${timeframe}&count=${count}`;
 	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
 
 	const response = await authenticatedFetch(url);

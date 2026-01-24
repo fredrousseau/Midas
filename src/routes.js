@@ -115,13 +115,12 @@ export function registerRoutes(parameters) {
 			return next();
 
 		// API routes and MCP - require Bearer token OR cookie (only if server is secured)
-		if (req.path.startsWith('/api/') || req.path.startsWith('/mcp')) {
+		if (req.path.startsWith('/api/') || req.path.startsWith('/api/v1/mcp')) {
 			if (isSecuredServer) {
 				// Try Bearer token first
 				const authHeader = req.headers.authorization;
-				if (authHeader && authHeader.startsWith('Bearer ')) {
+				if (authHeader && authHeader.startsWith('Bearer ')) 
 					return authMiddleware(req, res, next);
-				}
 
 				// Try cookie as fallback (for WebUI requests)
 				const token = req.cookies.webui_auth_token;
@@ -174,22 +173,22 @@ export function registerRoutes(parameters) {
 
 	// ========== Channel : MCP / Type : Inventory / Global Handlder ==========
 
-	app.get('/mcp/tools', (req, res) => {
-		logger.info('GET /mcp/tools - Returning registered tools');
+	app.get('/api/v1/mcp/tools', (req, res) => {
+		logger.info('GET /api/v1/mcp/tools - Returning registered tools');
 		res.json({ tools: mcpService.getTools() });
 	});
 
-	app.post('/mcp', async (req, res) => {
+	app.post('/api/v1/mcp', async (req, res) => {
 		await mcpService.handleRequest(req, res);
 	});
 
 	// ========== Channel : API / Type : MARKET DATA ==========
 
 	app.get(
-		'/api/v1/price/:symbol',
+		'/api/v1/market-data/price/:symbol',
 		asyncHandler(async (req) => {
 			const { symbol } = req.params;
-			logger.info(`GET /api/v1/price/${symbol} - Fetching current price`);
+			logger.info(`GET /api/v1/market-data/price/${symbol} - Fetching current price`);
 
 			const price = await marketDataService.getPrice(symbol);
 
@@ -202,10 +201,10 @@ export function registerRoutes(parameters) {
 	);
 
 	app.get(
-		'/api/v1/ohlcv',
+		'/api/v1/market-data/ohlcv',
 		asyncHandler(async (req) => {
 			const { symbol, timeframe, count, from, to, analysisDate } = parseTradingParams(req.query);
-			logger.info('GET /api/v1/ohlcv - Fetching OHLCV');
+			logger.info('GET /api/v1/market-data/ohlcv - Fetching OHLCV');
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -218,10 +217,10 @@ export function registerRoutes(parameters) {
 	);
 
 	app.get(
-		'/api/v1/pairs',
+		'/api/v1/market-data/pairs',
 		asyncHandler(async (req) => {
 			const { quoteAsset, baseAsset, status } = req.query;
-			logger.info('GET /api/v1/pairs - Fetching available trading pairs');
+			logger.info('GET /api/v1/market-data/pairs - Fetching available trading pairs');
 
 			const pairs = await marketDataService.getPairs({ quoteAsset, baseAsset, status });
 
@@ -229,33 +228,49 @@ export function registerRoutes(parameters) {
 		})
 	);
 
+	// ========== Channel : API / Type : CACHE MANAGEMENT ==========
+
+	app.get(
+		'/api/v1/cache/stats',
+		asyncHandler(async () => {
+			logger.info('GET /api/v1/cache/stats - Getting cache statistics');
+			return await dataProvider.getCacheStats();
+		})
+	);
+
 	app.delete(
-		'/api/v1/cache',
+		'/api/v1/cache/clear',
 		asyncHandler(async (req) => {
 			const { symbol, timeframe } = req.query;
-			logger.info('DELETE /api/v1/cache - Clearing cache', { symbol, timeframe });
-			const cleared = dataProvider.clearCache({ symbol, timeframe });
-			return { cleared, message: `${cleared} cache entries removed` };
+			logger.info(`DELETE /api/v1/cache/clear - Clearing cache for ${symbol || 'all'}:${timeframe || 'all'}`);
+
+			const cleared = await dataProvider.clearCache({ symbol, timeframe });
+
+			return {
+				success: true,
+				cleared,
+				message: `Cleared ${cleared} cache item(s)`,
+			};
 		})
 	);
 
 	// ========== Channel : API / Type : INDICATORS ==========
 
 	app.get(
-		'/api/v1/catalog',
+		'/api/v1/indicators/catalog',
 		asyncHandler(async (req) => {
 			const { category } = req.query;
-			logger.info('GET /api/v1/catalog - Fetching trading indicator catalog');
+			logger.info('GET /api/v1/indicators/catalog - Fetching trading indicator catalog');
 
 			return indicatorService.getCatalog(category);
 		})
 	);
 
 	app.get(
-		'/api/v1/indicator/:name',
+		'/api/v1/indicators/:name',
 		asyncHandler(async (req) => {
 			const { name } = req.params;
-			logger.info(`GET /api/v1/indicator/${name} - Fetching indicator metadata`);
+			logger.info(`GET /api/v1/indicators/${name} - Fetching indicator metadata`);
 
 			const metadata = indicatorService.getIndicatorMetadata(name);
 			if (!metadata) {
@@ -268,12 +283,12 @@ export function registerRoutes(parameters) {
 	);
 
 	app.get(
-		'/api/v1/indicators/:indicator',
+		'/api/v1/indicators/:name/series',
 		asyncHandler(async (req) => {
-			const { indicator } = req.params;
+			const { name } = req.params;
 			const { symbol, config, analysisDate } = req.query;
 			const { timeframe, bars } = parseTradingParams(req.query);
-			logger.info(`GET /api/v1/indicators/${indicator} - Getting time series for ${symbol}${analysisDate ? ` at ${analysisDate}` : ''}`);
+			logger.info(`GET /api/v1/indicators/${name}/series - Getting time series for ${symbol}${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -283,7 +298,7 @@ export function registerRoutes(parameters) {
 
 			return await indicatorService.getIndicatorTimeSeries({
 				symbol,
-				indicator,
+				indicator: name,
 				timeframe,
 				bars,
 				analysisDate,
@@ -295,11 +310,11 @@ export function registerRoutes(parameters) {
 	// ========== Channel : API / Type : REGIME DETECTION ==========
 
 	app.get(
-		'/api/v1/regime',
+		'/api/v1/regime/detect',
 		asyncHandler(async (req) => {
 			const { analysisDate } = req.query;
 			const { symbol, timeframe, count } = parseTradingParams(req.query);
-			logger.info(`GET /api/v1/regime - Detecting market regime${analysisDate ? ` at ${analysisDate}` : ''}`);
+			logger.info(`GET /api/v1/regime/detect - Detecting market regime${analysisDate ? ` at ${analysisDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -384,9 +399,9 @@ export function registerRoutes(parameters) {
 	// ========== Channel : API / Type : UTILITY ==========
 
 	app.get(
-		'/api/v1/config',
+		'/api/v1/utility/config',
 		asyncHandler(() => {
-			logger.info('GET /api/v1/config - Getting client configuration');
+			logger.info('GET /api/v1/utility/config - Getting client configuration');
 			return {
 				timezone: process.env.TIMEZONE || 'Europe/Paris',
 			};
@@ -394,35 +409,9 @@ export function registerRoutes(parameters) {
 	);
 
 	app.get(
-		'/api/v1/status',
+		'/api/v1/utility/status',
 		asyncHandler(() => {
 			return { status: 'ok' };
-		})
-	);
-
-	// ========== Channel : API / Type : CACHE MANAGEMENT ==========
-
-	app.get(
-		'/api/v1/cache/stats',
-		asyncHandler(async () => {
-			logger.info('GET /api/v1/cache/stats - Getting cache statistics');
-			return await dataProvider.getCacheStats();
-		})
-	);
-
-	app.delete(
-		'/api/v1/cache',
-		asyncHandler(async (req) => {
-			const { symbol, timeframe } = req.query;
-			logger.info(`DELETE /api/v1/cache - Clearing cache for ${symbol || 'all'}:${timeframe || 'all'}`);
-
-			const cleared = await dataProvider.clearCache({ symbol, timeframe });
-
-			return {
-				success: true,
-				cleared,
-				message: `Cleared ${cleared} cache item(s)`,
-			};
 		})
 	);
 
