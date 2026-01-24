@@ -3,13 +3,135 @@
  * Detects market regimes using ADX, Efficiency Ratio, ATR, Volume and moving averages
  * Aligned with project architecture: uses dataProvider and indicatorService
  *
- * Improvements:
+ * Features:
  * - ADX slope detection (trend nascent vs exhausted)
  * - Volume confirmation for breakouts
- * - Regime transition tracking
- * - Adaptive ER thresholds
- * - Compression context for breakout quality
+ * - Adaptive thresholds (timeframe + volatility)
+ * - Compression detection for breakout quality
  * - Continuous ER scoring (not binary)
+ * - Range bounds detection (support/resistance via swing clustering)
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * DETECTED REGIMES (10 total)
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * RANGE REGIMES (lateral market) - includes range_bounds in result
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * - range_normal      : Classic range, normal volatility
+ *                       Conditions: ADX < trending, ATR ratio normal
+ * - range_low_vol     : Compression range (squeeze)
+ *                       Conditions: ATR ratio < low threshold (low volatility)
+ * - range_high_vol    : Volatile/chaotic range
+ *                       Conditions: ATR ratio > high threshold, but ADX weak
+ * - range_directional : Range with directional bias
+ *                       Conditions: ADX high but ER choppy (strong but inefficient movement)
+ *
+ * TRENDING REGIMES (directional market)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * - trending_bullish  : Bullish trend
+ *                       Conditions: ADX ≥ trending, ER ≥ trending, bullish direction
+ * - trending_bearish  : Bearish trend
+ *                       Conditions: ADX ≥ trending, ER ≥ trending, bearish direction
+ * - trending_neutral  : Trend without clear direction
+ *                       Conditions: ADX ≥ trending, ER ≥ trending, neutral direction
+ *
+ * BREAKOUT REGIMES (volatility expansion)
+ * ─────────────────────────────────────────────────────────────────────────────────
+ * - breakout_bullish  : Bullish breakout
+ *                       Conditions: Volatility expansion + trending ADX + bullish direction
+ * - breakout_bearish  : Bearish breakout
+ *                       Conditions: Volatility expansion + trending ADX + bearish direction
+ * - breakout_neutral  : Breakout without clear direction
+ *                       Conditions: Volatility expansion + trending ADX + neutral direction
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
+ * RESULT STRUCTURE
+ * ═══════════════════════════════════════════════════════════════════════════════
+ *
+ * {
+ *   // Core detection
+ *   regime: string,              // One of the 10 regimes above
+ *   direction: string,           // 'bullish' | 'bearish' | 'neutral'
+ *   confidence: number,          // 0-1, detection confidence score
+ *
+ *   // Indicator components
+ *   components: {
+ *     adx: number,               // ADX value (trend strength)
+ *     plusDI: number,            // +DI (bullish pressure)
+ *     minusDI: number,           // -DI (bearish pressure)
+ *     efficiency_ratio: number,  // ER value (price efficiency)
+ *     atr_ratio: number,         // ATR short/long ratio (volatility state)
+ *     direction: { direction, strength, emaShort, emaLong }
+ *   },
+ *
+ *   // Adaptive thresholds used for detection
+ *   thresholds: {
+ *     adx: { weak, trending, strong },
+ *     er: { choppy, trending },
+ *     atrRatio: { low, high },
+ *     adjustmentFactors: { timeframe, volatility, combined }
+ *   },
+ *
+ *   // Request metadata
+ *   metadata: { symbol, timeframe, barsUsed, timestamps, durations, ... },
+ *
+ *   // Trend phase (ADX slope analysis)
+ *   trend_phase: {
+ *     adx_slope: { direction, strength, normalizedSlope },
+ *     phase: string              // 'nascent' | 'mature' | 'exhausted'
+ *   },
+ *
+ *   // Volume analysis (if available)
+ *   volume_analysis: {
+ *     ratio: number,             // Current vs average volume
+ *     is_spike: boolean,         // Volume spike detected
+ *     trend: string,             // 'rising' | 'declining' | 'flat'
+ *     confirms_breakout: boolean
+ *   } | null,
+ *
+ *   // Prior compression detection
+ *   compression: {
+ *     detected: boolean,
+ *     ratio: number,             // % of bars in compression
+ *     min_atr_ratio: number      // Lowest ATR ratio during compression
+ *   },
+ *
+ *   // Breakout quality (only for breakout_* regimes)
+ *   breakout_quality: {
+ *     score: number,             // 0-100
+ *     grade: string,             // 'low' | 'medium' | 'high'
+ *     factors: string[]          // Contributing factors
+ *   } | null,
+ *
+ *   // Range bounds (only for range_* regimes)
+ *   range_bounds: {
+ *     high: number,              // Resistance level
+ *     low: number,               // Support level
+ *     midpoint: number,
+ *     width: number,             // Absolute width
+ *     width_percent: number,     // Width as % of price
+ *     width_atr: number,         // Width in ATR units
+ *     current_position: number,  // 0 (support) to 1 (resistance)
+ *     high_touches: number,      // Times resistance was tested
+ *     low_touches: number,       // Times support was tested
+ *     strength: string,          // 'weak' | 'moderate' | 'strong'
+ *     proximity: string,         // 'near_support' | 'near_resistance' | 'middle' | ...
+ *     method: string,            // 'swing_clusters' | 'minmax_fallback'
+ *     all_resistances: [{price, touches}],
+ *     all_supports: [{price, touches}]
+ *   } | null,
+ *
+ *   // Confidence scoring breakdown
+ *   scoring_details: {
+ *     regime_clarity: number,    // How clear is the regime classification
+ *     er_score: number,          // ER contribution to confidence
+ *     direction_score: number,   // Direction clarity contribution
+ *     coherence: number,         // Signal coherence score
+ *     phase_bonus: number        // Bonus/penalty for trend phase
+ *   }
+ * }
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════
  */
 
 import { round, detectTrend, calculateStats } from '#utils/statisticalHelpers.js';
@@ -98,9 +220,6 @@ export class RegimeDetectionService {
 		this.indicatorService = parameters.indicatorService || null;
 		if (!this.indicatorService) throw new Error('RegimeDetectionService requires an indicatorService instance in options');
 
-		// Track previous regime for transition detection
-		this._previousRegimes = new Map(); // key: symbol_timeframe, value: { regime, timestamp }
-
 		this.logger.info('RegimeDetectionService initialized.');
 	}
 
@@ -122,8 +241,11 @@ export class RegimeDetectionService {
 		const timeframeMultiplier = config.adaptive.timeframeMultipliers[timeframe] || 1.0;
 
 		// 2. Volatility adjustment
-		const volatilityWindow = Math.min(config.adaptive.volatilityWindow, atrShort.length);
-		const recentWindow = Math.max(volatilityWindow, 20);
+		// Ensure recentWindow never exceeds array length
+		const recentWindow = Math.min(
+			atrShort.length,
+			Math.max(config.adaptive.volatilityWindow, 20)
+		);
 
 		const atrRatios = [];
 		for (let i = atrShort.length - recentWindow; i < atrShort.length; i++) {
@@ -150,12 +272,16 @@ export class RegimeDetectionService {
 		// 3. Combined adjustment factor
 		const combinedMultiplier = timeframeMultiplier * volatilityMultiplier;
 
-		// 4. Apply adjustments - now includes ER thresholds
+		// 4. ADX multiplier - less aggressive (volatility should not raise ADX thresholds too much)
+		// High volatility makes trends harder to detect, so we cap the ADX adjustment
+		const adxMultiplier = timeframeMultiplier * Math.min(1.2, volatilityMultiplier);
+
+		// 5. Apply adjustments - now includes ER thresholds
 		const adaptiveThresholds = {
 			adx: {
-				weak: Math.max(10, Math.min(100, config.adx.weak * combinedMultiplier)),
-				trending: Math.max(15, Math.min(100, config.adx.trending * combinedMultiplier)),
-				strong: Math.max(25, Math.min(100, config.adx.strong * combinedMultiplier)),
+				weak: Math.max(10, Math.min(35, config.adx.weak * adxMultiplier)),
+				trending: Math.max(15, Math.min(35, config.adx.trending * adxMultiplier)),
+				strong: Math.max(25, Math.min(50, config.adx.strong * adxMultiplier)),
 			},
 			er: {
 				// ER thresholds now also adaptive based on timeframe
@@ -277,79 +403,278 @@ export class RegimeDetectionService {
 
 		return {
 			detected: compressionRatio >= 0.5, // At least 50% of bars were compressed
-			compressionRatio: round(compressionRatio, 2),
+			ratio: round(compressionRatio, 2),
 			minAtrRatio: round(minRatio, 4),
 			barsCompressed: compressedBars,
 		};
 	}
 
 	/**
-	 * Track regime transitions
+	 * Detect swing points (local highs and lows) in price data
 	 * @private
+	 * @param {Array<Object>} bars - OHLCV bars
+	 * @param {number} atrValue - Current ATR for significance filtering
+	 * @param {number} lookback - Bars to look left/right for swing detection (default: 3)
+	 * @returns {Object} { swingHighs: [{price, index, timestamp}], swingLows: [...] }
 	 */
-	_trackRegimeTransition(symbol, timeframe, currentRegime, confidence) {
-		const key = `${symbol}_${timeframe}`;
-		const previous = this._previousRegimes.get(key);
-		const now = Date.now();
+	_detectSwingPoints(bars, atrValue, lookback = 3) {
+		const swingHighs = [];
+		const swingLows = [];
 
-		let transition = null;
+		// Minimum significance threshold: swing must exceed 0.3 * ATR
+		const minSignificance = atrValue * 0.3;
 
-		if (previous && previous.regime !== currentRegime)
-			transition = {
-				from: previous.regime,
-				to: currentRegime,
-				duration_ms: now - previous.timestamp,
-				significance: this._assessTransitionSignificance(previous.regime, currentRegime),
-			};
+		for (let i = lookback; i < bars.length - lookback; i++) {
+			const currentBar = bars[i];
+			let isSwingHigh = true;
+			let isSwingLow = true;
 
-		// Update stored regime
-		this._previousRegimes.set(key, {
-			regime: currentRegime,
-			confidence,
-			timestamp: now,
-		});
+			// Check if current bar is higher/lower than surrounding bars
+			for (let j = 1; j <= lookback; j++) {
+				const leftBar = bars[i - j];
+				const rightBar = bars[i + j];
 
-		// Cleanup old entries (keep last 100)
-		if (this._previousRegimes.size > 100) {
-			const oldestKey = this._previousRegimes.keys().next().value;
-			this._previousRegimes.delete(oldestKey);
+				// Swing high: current high must be >= all surrounding highs
+				if (currentBar.high < leftBar.high || currentBar.high < rightBar.high)
+					isSwingHigh = false;
+
+				// Swing low: current low must be <= all surrounding lows
+				if (currentBar.low > leftBar.low || currentBar.low > rightBar.low)
+					isSwingLow = false;
+			}
+
+			// Validate significance using ATR
+			if (isSwingHigh) {
+				// Check that this high is significantly above nearby lows
+				const nearbyLows = bars.slice(Math.max(0, i - lookback * 2), i + lookback * 2 + 1).map(b => b.low);
+				const minNearbyLow = Math.min(...nearbyLows);
+				if (currentBar.high - minNearbyLow >= minSignificance)
+					swingHighs.push({
+						price: currentBar.high,
+						index: i,
+						timestamp: currentBar.timestamp,
+					});
+			}
+
+			if (isSwingLow) {
+				// Check that this low is significantly below nearby highs
+				const nearbyHighs = bars.slice(Math.max(0, i - lookback * 2), i + lookback * 2 + 1).map(b => b.high);
+				const maxNearbyHigh = Math.max(...nearbyHighs);
+				if (maxNearbyHigh - currentBar.low >= minSignificance)
+					swingLows.push({
+						price: currentBar.low,
+						index: i,
+						timestamp: currentBar.timestamp,
+					});
+			}
 		}
 
-		return transition;
+		return { swingHighs, swingLows };
 	}
 
 	/**
-	 * Assess significance of regime transition
+	 * Cluster price levels that are close together
+	 * @private
+	 * @param {Array<Object>} swings - Array of {price, index, timestamp}
+	 * @param {number} clusterThreshold - Max distance to consider same cluster (in price units)
+	 * @returns {Array<Object>} Clustered levels [{price, touches, firstIndex, lastIndex}]
+	 */
+	_clusterLevels(swings, clusterThreshold) {
+		if (!swings || swings.length === 0) return [];
+
+		// Sort by price
+		const sorted = [...swings].sort((a, b) => a.price - b.price);
+		const clusters = [];
+		let currentCluster = {
+			prices: [sorted[0].price],
+			indices: [sorted[0].index],
+			timestamps: [sorted[0].timestamp],
+		};
+
+		for (let i = 1; i < sorted.length; i++) {
+			const swing = sorted[i];
+			const clusterAvg = currentCluster.prices.reduce((a, b) => a + b, 0) / currentCluster.prices.length;
+
+			if (Math.abs(swing.price - clusterAvg) <= clusterThreshold) {
+				// Add to current cluster
+				currentCluster.prices.push(swing.price);
+				currentCluster.indices.push(swing.index);
+				currentCluster.timestamps.push(swing.timestamp);
+			} else {
+				// Finalize current cluster and start new one
+				clusters.push(this._finalizeCluster(currentCluster));
+				currentCluster = {
+					prices: [swing.price],
+					indices: [swing.index],
+					timestamps: [swing.timestamp],
+				};
+			}
+		}
+
+		// Don't forget last cluster
+		clusters.push(this._finalizeCluster(currentCluster));
+
+		return clusters;
+	}
+
+	/**
+	 * Finalize a cluster into a single level
 	 * @private
 	 */
-	_assessTransitionSignificance(fromRegime, toRegime) {
-		// High significance transitions (trading signals)
-		const highSignificance = [
-			['range_low_vol', 'breakout_bullish'],
-			['range_low_vol', 'breakout_bearish'],
-			['range_normal', 'breakout_bullish'],
-			['range_normal', 'breakout_bearish'],
-			['trending_bullish', 'range_normal'],
-			['trending_bearish', 'range_normal'],
-			['trending_bullish', 'breakout_bearish'],
-			['trending_bearish', 'breakout_bullish'],
-		];
+	_finalizeCluster(cluster) {
+		const avgPrice = cluster.prices.reduce((a, b) => a + b, 0) / cluster.prices.length;
+		return {
+			price: round(avgPrice, 8), // High precision for crypto
+			touches: cluster.prices.length,
+			firstIndex: Math.min(...cluster.indices),
+			lastIndex: Math.max(...cluster.indices),
+			priceRange: {
+				min: Math.min(...cluster.prices),
+				max: Math.max(...cluster.prices),
+			},
+		};
+	}
 
-		for (const [from, to] of highSignificance)
-			if (fromRegime === from && toRegime === to) return 'high';
+	/**
+	 * Calculate range bounds when a range regime is detected
+	 * Uses swing point detection and clustering for robust S/R levels
+	 * @private
+	 * @param {Array<Object>} bars - OHLCV bars
+	 * @param {number} atrValue - Current ATR value
+	 * @param {number} currentPrice - Current price
+	 * @returns {Object} Range bounds information
+	 */
+	_calculateRangeBounds(bars, atrValue, currentPrice) {
+		// Use recent bars for range detection (last 50-100 bars typically)
+		const lookbackBars = Math.min(bars.length, 100);
+		const recentBars = bars.slice(-lookbackBars);
 
-		// Medium significance
-		const mediumSignificance = [
-			['range_normal', 'trending_bullish'],
-			['range_normal', 'trending_bearish'],
-			['range_high_vol', 'trending_bullish'],
-			['range_high_vol', 'trending_bearish'],
-		];
+		// Calculate the price range of recent bars to filter relevant swings
+		const recentHighs = recentBars.map(b => b.high);
+		const recentLows = recentBars.map(b => b.low);
+		const recentMax = Math.max(...recentHighs);
+		const recentMin = Math.min(...recentLows);
+		const priceRange = recentMax - recentMin;
 
-		for (const [from, to] of mediumSignificance)
-			if (fromRegime === from && toRegime === to) return 'medium';
+		// Maximum distance for relevant levels: 2x the recent price range or 10x ATR
+		const maxRelevantDistance = Math.max(priceRange * 2, atrValue * 10);
 
-		return 'low';
+		// Detect swing points
+		const { swingHighs, swingLows } = this._detectSwingPoints(recentBars, atrValue, 3);
+
+		// Filter swings that are within relevant distance from current price
+		const relevantSwingHighs = swingHighs.filter(s => Math.abs(s.price - currentPrice) <= maxRelevantDistance);
+		const relevantSwingLows = swingLows.filter(s => Math.abs(s.price - currentPrice) <= maxRelevantDistance);
+
+		// If not enough relevant swings, fall back to simple min/max of recent bars
+		if (relevantSwingHighs.length < 2 || relevantSwingLows.length < 2) 
+			return {
+				high: round(recentMax, 8),
+				low: round(recentMin, 8),
+				midpoint: round((recentMax + recentMin) / 2, 8),
+				width: round(recentMax - recentMin, 8),
+				width_percent: round(((recentMax - recentMin) / recentMin) * 100, 2),
+				width_atr: round((recentMax - recentMin) / atrValue, 2),
+				current_position: round(Math.max(0, Math.min(1, (currentPrice - recentMin) / (recentMax - recentMin))), 2),
+				high_touches: 1,
+				low_touches: 1,
+				strength: 'weak',
+				proximity: this._calculateProximity(currentPrice, recentMax, recentMin, atrValue),
+				method: 'minmax_fallback',
+			};
+
+		// Cluster threshold: levels within 0.5 * ATR are considered the same
+		const clusterThreshold = atrValue * 0.5;
+
+		// Cluster swing highs and lows
+		const resistanceClusters = this._clusterLevels(relevantSwingHighs, clusterThreshold);
+		const supportClusters = this._clusterLevels(relevantSwingLows, clusterThreshold);
+
+		// Find the most relevant resistance (closest above current price, or highest touched)
+		const resistanceAbove = resistanceClusters
+			.filter(c => c.price > currentPrice)
+			.sort((a, b) => a.price - b.price);
+
+		const supportBelow = supportClusters
+			.filter(c => c.price < currentPrice)
+			.sort((a, b) => b.price - a.price);
+
+		// Select primary resistance and support
+		let primaryResistance, primarySupport;
+
+		if (resistanceAbove.length > 0)
+			// Prefer the nearest resistance with at least 2 touches, otherwise take nearest
+			primaryResistance = resistanceAbove.find(r => r.touches >= 2) || resistanceAbove[0];
+		else if (resistanceClusters.length > 0)
+			// All resistances below current price - take the highest (price broke above)
+			primaryResistance = resistanceClusters.sort((a, b) => b.price - a.price)[0];
+		else
+			// No clusters - use recent max
+			primaryResistance = { price: recentMax, touches: 1 };
+
+		if (supportBelow.length > 0)
+			// Prefer the nearest support with at least 2 touches, otherwise take nearest
+			primarySupport = supportBelow.find(s => s.touches >= 2) || supportBelow[0];
+		else if (supportClusters.length > 0)
+			// All supports above current price - take the lowest (price broke below)
+			primarySupport = supportClusters.sort((a, b) => a.price - b.price)[0];
+		else
+			// No clusters - use recent min
+			primarySupport = { price: recentMin, touches: 1 };
+
+		const high = primaryResistance.price;
+		const low = primarySupport.price;
+		const highTouches = primaryResistance.touches;
+		const lowTouches = primarySupport.touches;
+
+		// Calculate strength based on number of touches
+		const totalTouches = highTouches + lowTouches;
+		let strength = 'weak';
+		if (totalTouches >= 6) strength = 'strong';
+		else if (totalTouches >= 4) strength = 'moderate';
+
+		const width = high - low;
+		const position = width > 0 ? (currentPrice - low) / width : 0.5;
+
+		return {
+			high: round(high, 8),
+			low: round(low, 8),
+			midpoint: round((high + low) / 2, 8),
+			width: round(width, 8),
+			width_percent: round((width / low) * 100, 2),
+			width_atr: round(width / atrValue, 2),
+			current_position: round(Math.max(0, Math.min(1, position)), 2),
+			high_touches: highTouches,
+			low_touches: lowTouches,
+			strength,
+			proximity: this._calculateProximity(currentPrice, high, low, atrValue),
+			method: 'swing_clusters',
+			// Additional detail for advanced usage
+			all_resistances: resistanceClusters.slice(0, 3).map(c => ({
+				price: c.price,
+				touches: c.touches,
+			})),
+			all_supports: supportClusters.slice(0, 3).map(c => ({
+				price: c.price,
+				touches: c.touches,
+			})),
+		};
+	}
+
+	/**
+	 * Calculate proximity to range boundaries
+	 * @private
+	 */
+	_calculateProximity(currentPrice, high, low, atrValue) {
+		const distanceToHigh = high - currentPrice;
+		const distanceToLow = currentPrice - low;
+		const proximityThreshold = atrValue * 0.5; // Within 0.5 ATR = "near"
+
+		if (distanceToHigh <= proximityThreshold) return 'near_resistance';
+		if (distanceToLow <= proximityThreshold) return 'near_support';
+		if (distanceToHigh < distanceToLow) return 'upper_half';
+		if (distanceToLow < distanceToHigh) return 'lower_half';
+		return 'middle';
 	}
 
 	/**
@@ -358,11 +683,14 @@ export class RegimeDetectionService {
 	 * @private
 	 */
 	_calculateERScore(erValue, regimeType, thresholds) {
+		// Dynamic high ER threshold based on adaptive thresholds
+		const highERThreshold = Math.max(0.7, thresholds.er.trending + 0.2);
+
 		if (regimeType === 'trending') {
 			// For trending: higher ER = higher score (linear scaling)
-			if (erValue >= 0.8) return 1.0;
+			if (erValue >= highERThreshold) return 1.0;
 			if (erValue >= thresholds.er.trending)
-				return 0.5 + ((erValue - thresholds.er.trending) / (0.8 - thresholds.er.trending)) * 0.5;
+				return 0.5 + ((erValue - thresholds.er.trending) / (highERThreshold - thresholds.er.trending)) * 0.5;
 			return 0.3;
 		} else if (regimeType === 'breakout') {
 			// For breakout: intermediate ER is acceptable
@@ -477,7 +805,7 @@ export class RegimeDetectionService {
 		let direction = 'neutral';
 
 		if (currentPrice > emaShortValue && emaShortValue > emaLongValue) direction = 'bullish';
-		else if (currentPrice < emaLongValue && emaShortValue < emaLongValue) direction = 'bearish';
+		else if (currentPrice < emaShortValue && emaShortValue < emaLongValue) direction = 'bearish';
 
 		// DI confirmation filter
 		if (plusDI !== null && plusDI !== undefined && minusDI !== null && minusDI !== undefined) {
@@ -626,10 +954,12 @@ export class RegimeDetectionService {
 		confidence = round(confidence, 2);
 
 		/* =====================================================
-		8. Regime transition tracking
+		8. Calculate range bounds (only for range regimes)
 		===================================================== */
 
-		const transition = this._trackRegimeTransition(symbol, timeframe, regime, confidence);
+		let rangeBounds = null;
+		if (regimeType === 'range')
+			rangeBounds = this._calculateRangeBounds(ohlcv.bars, atrShortValue, currentPrice);
 
 		/* =====================================================
 		9. Result object (backward compatible)
@@ -686,12 +1016,6 @@ export class RegimeDetectionService {
 			trend_phase: {
 				adx_slope: adxSlope,
 				phase: adxSlope.phase,
-				interpretation:
-					adxSlope.phase === 'nascent'
-						? 'Trend strengthening - good entry opportunity'
-						: adxSlope.phase === 'exhausted'
-							? 'Trend weakening - consider taking profits'
-							: 'Trend stable',
 			},
 			volume_analysis: volumeAnalysis.available
 				? {
@@ -704,12 +1028,12 @@ export class RegimeDetectionService {
 			compression: compression.detected
 				? {
 						detected: true,
-						ratio: compression.compressionRatio,
+						ratio: compression.ratio,
 						min_atr_ratio: compression.minAtrRatio,
 					}
 				: { detected: false },
 			breakout_quality: breakoutQuality,
-			transition: transition,
+			range_bounds: rangeBounds,
 			scoring_details: {
 				regime_clarity: round(regimeClarityScore, 2),
 				er_score: round(erScore, 2),
