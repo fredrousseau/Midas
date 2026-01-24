@@ -34,7 +34,7 @@ import { DataProvider } from './DataProvider/DataProvider.js';
 
 import { MarketDataService } from './Trading/MarketData/MarketDataService.js';
 import { IndicatorService } from './Trading/Indicator/IndicatorService.js';
-import { MarketAnalysisService } from './Trading/MarketAnalysis/MarketAnalysisService.js';
+import { MarketContextService } from './Trading/MarketContext/MarketContextService.js';
 
 // ============================================================================
 // SERVER CONFIGURATION
@@ -186,11 +186,11 @@ const indicatorService = new IndicatorService({
 });
 
 /**
- * Market Analysis Service
- * Performs market analysis using indicators and market data
- * @type {MarketAnalysisService}
+ * Market Context Service
+ * Generates market context using indicators and market data
+ * @type {MarketContextService}
  */
-const marketAnalysisService = new MarketAnalysisService({
+const marketContextService = new MarketContextService({
 	logger: logger,
 	dataProvider: dataProvider,
 	indicatorService: indicatorService,
@@ -221,7 +221,7 @@ await mcpService.registerAllModules({
 	dataProvider: dataProvider,
 	marketDataService: marketDataService,
 	indicatorService: indicatorService,
-	marketAnalysisService: marketAnalysisService,
+	marketContextService: marketContextService,
 });
 
 // ============================================================================
@@ -241,7 +241,7 @@ registerRoutes({
 	dataProvider: dataProvider,
 	marketDataService: marketDataService,
 	indicatorService: indicatorService,
-	marketAnalysisService: marketAnalysisService,
+	marketContextService: marketContextService,
 	isSecuredServer: isSecuredServer
 });
 

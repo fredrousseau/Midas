@@ -58,8 +58,8 @@ export function registerRoutes(parameters) {
 	const marketDataService = parameters.marketDataService || null;
 	if (!marketDataService) throw new Error('registerTradingRoutes requires a marketDataService instance in options');
 
-	const marketAnalysisService = parameters.marketAnalysisService || null;
-	if (!marketAnalysisService) throw new Error('registerTradingRoutes requires a marketAnalysisService instance in options');
+	const marketContextService = parameters.marketContextService || null;
+	if (!marketContextService) throw new Error('registerTradingRoutes requires a marketContextService instance in options');
 
 	const logger = parameters.logger || null;
 	if (!logger) throw new Error('registerTradingRoutes requires a logger instance in options');
@@ -307,7 +307,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketAnalysisService.detectRegime({ symbol, timeframe, count, analysisDate });
+			return await marketContextService.detectRegime({ symbol, timeframe, count, analysisDate });
 		})
 	);
 
@@ -338,7 +338,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketAnalysisService.generateMarketAnalysis({
+			return await marketContextService.generateContext({
 				symbol,
 				timeframes: timeframesObj,
 				analysisDate,
@@ -373,7 +373,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketAnalysisService.generateForLLM({
+			return await marketContextService.generateLLMContext({
 				symbol,
 				timeframes: timeframesObj,
 				analysisDate,

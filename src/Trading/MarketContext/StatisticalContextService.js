@@ -118,7 +118,7 @@ export class StatisticalContextService {
 				data_quality: this._assessDataQuality(contexts),
 			},
 			timeframes: timeframesByTemporality,
-			_internal_alignment: alignment, // Used internally by MarketAnalysisService
+			_internal_alignment: alignment, // Used internally by MarketContextService
 		};
 	}
 
