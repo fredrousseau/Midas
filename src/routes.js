@@ -346,6 +346,41 @@ export function registerRoutes(parameters) {
 		})
 	);
 
+	// LLM-optimized context endpoint
+	// Returns clean, interpreted data suitable for LLM decision-making
+	app.get(
+		'/api/v1/context/llm',
+		asyncHandler(async (req) => {
+			const { symbol, long, medium, short, analysisDate } = req.query;
+			logger.info(`GET /api/v1/context/llm - LLM-optimized context${analysisDate ? ` at ${analysisDate}` : ''}`);
+
+			if (!symbol) {
+				const error = new Error('symbol is required');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			// Build timeframes object from query parameters
+			const timeframesObj = {};
+			if (long) timeframesObj.long = long;
+			if (medium) timeframesObj.medium = medium;
+			if (short) timeframesObj.short = short;
+
+			// Validate at least one timeframe is provided
+			if (Object.keys(timeframesObj).length === 0) {
+				const error = new Error('At least one timeframe (long, medium, or short) is required. Example: ?long=1w&medium=1d&short=1h');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			return await marketAnalysisService.generateForLLM({
+				symbol,
+				timeframes: timeframesObj,
+				analysisDate,
+			});
+		})
+	);
+
 	// ========== Channel : API / Type : UTILITY ==========
 
 	app.get(
