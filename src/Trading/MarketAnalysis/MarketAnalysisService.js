@@ -2,15 +2,18 @@
  * Market Analysis Service (Unified)
  * Handles multi-timeframe market analysis and trading context generation
  * Orchestrates StatisticalContextService and generates actionable insights
+ *
+ * Output formats:
+ * - generateMarketAnalysis(): Full technical data for internal use/WebUI
+ * - generateForLLM(): Optimized format for LLM decision-making
  */
 
 import StatisticalContextService from './StatisticalContext/StatisticalContextService.js';
 import { RegimeDetectionService } from './RegimeDetection/RegimeDetectionService.js';
-import { TradingContextService } from './TradingContext/TradingContextService.js';
 
 export class MarketAnalysisService {
 	constructor(parameters = {}) {
-		this.logger = parameters.logger ;
+		this.logger = parameters.logger;
 		if (!this.logger) throw new Error('MarketAnalysisService requires a logger instance in options');
 
 		this.dataProvider = parameters.dataProvider;
@@ -25,7 +28,6 @@ export class MarketAnalysisService {
 			...parameters,
 			regimeDetectionService: this.regimeDetectionService
 		});
-		this.tradingContextService = new TradingContextService({ logger: this.logger });
 
 		this.logger.info('MarketAnalysisService initialized.');
 	}
@@ -153,22 +155,24 @@ export class MarketAnalysisService {
 	}
 
 	/**
-	 * Generate complete market analysis with trading context
-	 * This is the main comprehensive method that combines all analysis
-	 * @param {Object} params - { symbol, timeframes, count, analysisDate }
-	 * @returns {Promise<Object>} - Complete analysis with trading context
+	 * Generate LLM-optimized market analysis
+	 * Returns a clean, interpreted format suitable for LLM decision-making
+	 * Removes technical metadata, keeps only actionable information
+	 * @param {Object} params - { symbol, timeframes, analysisDate }
+	 * @returns {Promise<Object>} - LLM-ready analysis
 	 */
-	async generateCompleteAnalysis({ symbol, timeframes, count = 200, analysisDate }) {
-		// Generate market analysis
-		const marketAnalysis = await this.generateMarketAnalysis({ symbol, timeframes, count, analysisDate });
+	async generateForLLM({ symbol, timeframes, analysisDate }) {
+		// Generate full context
+		const statContext = await this.statisticalContextService.generateFullContext({
+			symbol,
+			timeframes,
+			analysisDate,
+		});
 
-		// Generate trading context
-		const tradingContext = this.tradingContextService.generate(marketAnalysis);
+		const alignment = statContext._internal_alignment;
 
-		return {
-			...marketAnalysis,
-			trading_context: tradingContext,
-		};
+		// Transform to LLM format
+		return this.statisticalContextService.transformForLLM(statContext, alignment);
 	}
 
 	/**
@@ -180,7 +184,6 @@ export class MarketAnalysisService {
 	async detectRegime({ symbol, timeframe = '1h', count = 200, analysisDate }) {
 		return await this.regimeDetectionService.detectRegime({ symbol, timeframe, count, analysisDate });
 	}
-
 }
 
 export default MarketAnalysisService;
