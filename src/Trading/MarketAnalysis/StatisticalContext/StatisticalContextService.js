@@ -325,6 +325,14 @@ export class StatisticalContextService {
 			interpretation: this._interpretRegime(regimeData.regime),
 			components: regimeData.components,
 			timeframe,
+			// Include range bounds for range regimes
+			range_bounds: regimeData.range_bounds || null,
+			// Include trend phase info
+			trend_phase: regimeData.trend_phase?.phase || null,
+			// Include compression info for breakout context
+			compression: regimeData.compression?.detected ? regimeData.compression : null,
+			// Include breakout quality for breakout regimes
+			breakout_quality: regimeData.breakout_quality || null,
 		};
 	}
 
@@ -580,6 +588,243 @@ export class StatisticalContextService {
 				neutral: round(neutralScore / totalWeight, 2),
 			},
 		};
+	}
+
+	/**
+	 * Transform full context into LLM-optimized format
+	 * Removes technical metadata, keeps only actionable information
+	 * @param {Object} fullContext - Result from generateFullContext()
+	 * @param {Object} alignment - Multi-timeframe alignment data
+	 * @returns {Object} LLM-ready context
+	 */
+	transformForLLM(fullContext, alignment) {
+		const { metadata, timeframes } = fullContext;
+
+		// Build LLM-optimized structure
+		const llmContext = {
+			symbol: metadata.symbol,
+			analysis_time: metadata.timestamp,
+			data_quality: metadata.data_quality,
+
+			// Multi-timeframe summary
+			alignment: {
+				direction: alignment.dominant_direction,
+				strength: this._interpretAlignmentScore(alignment.alignment_score),
+				score: alignment.alignment_score,
+				conflicts: alignment.conflicts.length > 0
+					? alignment.conflicts.map(c => c.description)
+					: null,
+			},
+
+			// Per-timeframe analysis (optimized)
+			timeframes: {},
+		};
+
+		// Transform each timeframe
+		for (const [temporality, tfData] of Object.entries(timeframes)) {
+			if (!tfData) continue;
+
+			llmContext.timeframes[temporality] = this._transformTimeframeForLLM(tfData);
+		}
+
+		return llmContext;
+	}
+
+	/**
+	 * Transform single timeframe data for LLM consumption
+	 * @private
+	 */
+	_transformTimeframeForLLM(tfData) {
+		const result = {
+			timeframe: tfData.timeframe,
+			purpose: tfData.purpose,
+
+			// Regime (core decision factor)
+			regime: tfData.regime?.type || 'unknown',
+			regime_confidence: tfData.regime?.confidence || 0,
+			regime_interpretation: tfData.regime?.interpretation || null,
+
+			// Direction with strength
+			direction: tfData.regime?.components?.direction?.direction || 'neutral',
+			direction_strength: this._interpretDirectionStrength(tfData.regime?.components?.direction?.strength),
+
+			// Key indicators (interpreted, not raw values)
+			indicators: {
+				adx: tfData.trend_indicators?.adx
+					? { value: tfData.trend_indicators.adx.value, state: tfData.trend_indicators.adx.interpretation }
+					: null,
+				rsi: tfData.momentum_indicators?.rsi
+					? {
+						value: tfData.momentum_indicators.rsi.value,
+						zone: tfData.momentum_indicators.rsi.zone,
+						trend: tfData.momentum_indicators.rsi.trend,
+					}
+					: null,
+				macd: tfData.momentum_indicators?.macd
+					? { cross: tfData.momentum_indicators.macd.cross, histogram_trend: tfData.momentum_indicators.macd.histogram_trend }
+					: null,
+				volume: tfData.volume_indicators?.volume
+					? { state: tfData.volume_indicators.volume.interpretation }
+					: null,
+			},
+
+			// Volatility state
+			volatility: tfData.volatility_indicators?.atr
+				? {
+					state: tfData.volatility_indicators.atr.interpretation,
+					percentile: tfData.volatility_indicators.atr.percentile,
+					bb_squeeze: tfData.volatility_indicators?.bollinger_bands?.squeeze_detected || false,
+				}
+				: null,
+
+			// EMA alignment
+			ema_alignment: tfData.moving_averages?.ema?.alignment || null,
+
+			// Price action
+			price: {
+				current: tfData.price_action?.current || null,
+				structure: tfData.price_action?.structure || null,
+				bar_type: tfData.price_action?.bar_type || null,
+			},
+
+			// Support/Resistance (simplified)
+			levels: this._simplifyLevels(tfData.support_resistance),
+
+			// Range bounds (only for range regimes)
+			range_bounds: tfData.regime?.type?.startsWith('range_')
+				? this._extractRangeBounds(tfData)
+				: null,
+
+			// Breakout quality (only for breakout regimes)
+			breakout_quality: tfData.regime?.type?.startsWith('breakout_')
+				? this._extractBreakoutQuality(tfData)
+				: null,
+
+			// Trend phase (for trending regimes)
+			trend_phase: tfData.regime?.trend_phase || null,
+
+			// Prior compression (useful context for breakouts)
+			had_compression: tfData.regime?.compression?.detected || false,
+
+			// Coherence check
+			coherence: tfData.coherence_check?.status || null,
+
+			// Patterns (if detected)
+			patterns: tfData.micro_patterns?.length > 0
+				? tfData.micro_patterns.map(p => ({
+					pattern: p.pattern,
+					confidence: p.confidence,
+					implication: p.implication,
+				}))
+				: null,
+		};
+
+		// Remove null values for cleaner output
+		return this._removeNulls(result);
+	}
+
+	/**
+	 * Interpret alignment score as text
+	 * @private
+	 */
+	_interpretAlignmentScore(score) {
+		if (score >= 0.85) return 'strong';
+		if (score >= 0.7) return 'moderate';
+		if (score >= 0.5) return 'weak';
+		return 'conflicting';
+	}
+
+	/**
+	 * Interpret direction strength (-2 to +2) as text
+	 * @private
+	 */
+	_interpretDirectionStrength(strength) {
+		if (strength === null || strength === undefined) return null;
+		const absStrength = Math.abs(strength);
+		if (absStrength >= 1.5) return 'strong';
+		if (absStrength >= 0.8) return 'moderate';
+		if (absStrength >= 0.3) return 'weak';
+		return 'negligible';
+	}
+
+	/**
+	 * Simplify S/R levels for LLM
+	 * @private
+	 */
+	_simplifyLevels(sr) {
+		if (!sr) return null;
+
+		const result = {};
+
+		if (sr.resistance_levels?.length > 0) {
+			result.nearest_resistance = {
+				price: sr.resistance_levels[0].level,
+				type: sr.resistance_levels[0].type,
+				distance: sr.resistance_levels[0].distance,
+			};
+		}
+
+		if (sr.support_levels?.length > 0) {
+			result.nearest_support = {
+				price: sr.support_levels[0].level,
+				type: sr.support_levels[0].type,
+				distance: sr.support_levels[0].distance,
+			};
+		}
+
+		return Object.keys(result).length > 0 ? result : null;
+	}
+
+	/**
+	 * Extract range bounds from regime data
+	 * @private
+	 */
+	_extractRangeBounds(tfData) {
+		const rangeBounds = tfData.regime?.range_bounds;
+		if (!rangeBounds) return null;
+
+		return {
+			high: rangeBounds.high,
+			low: rangeBounds.low,
+			width_percent: rangeBounds.width_percent,
+			current_position: rangeBounds.current_position,
+			strength: rangeBounds.strength,
+			proximity: rangeBounds.proximity,
+		};
+	}
+
+	/**
+	 * Extract breakout quality for breakout regimes
+	 * @private
+	 */
+	_extractBreakoutQuality(tfData) {
+		const quality = tfData.regime?.breakout_quality;
+		if (!quality) return null;
+
+		return {
+			grade: quality.grade,
+			score: quality.score,
+			factors: quality.factors,
+		};
+	}
+
+	/**
+	 * Recursively remove null/undefined values from object
+	 * @private
+	 */
+	_removeNulls(obj) {
+		if (obj === null || obj === undefined) return undefined;
+		if (typeof obj !== 'object') return obj;
+		if (Array.isArray(obj)) return obj.map(item => this._removeNulls(item)).filter(item => item !== undefined);
+
+		const result = {};
+		for (const [key, value] of Object.entries(obj)) {
+			const cleaned = this._removeNulls(value);
+			if (cleaned !== undefined && cleaned !== null) {
+				result[key] = cleaned;
+			}
+		}
+		return Object.keys(result).length > 0 ? result : undefined;
 	}
 
 	/**
