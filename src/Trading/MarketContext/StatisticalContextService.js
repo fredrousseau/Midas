@@ -10,7 +10,7 @@ import VolatilityEnricher from './enrichers/VolatilityEnricher.js';
 import VolumeEnricher from './enrichers/VolumeEnricher.js';
 import PriceActionEnricher from './enrichers/PriceActionEnricher.js';
 import PatternDetector from './enrichers/PatternDetector.js';
-import { calculateStats, getPercentileRank, getTypicalRange, detectTrend, detectAnomaly, rateOfChange, round } from '../../Utils/statisticalHelpers.js';
+import { round } from '../../Utils/statisticalHelpers.js';
 import { getBarCount } from './config/barCounts.js';
 import { STATISTICAL_PERIODS, TREND_PERIODS, PATTERN_PERIODS, SUPPORT_RESISTANCE_PERIODS } from './config/lookbackPeriods.js';
 
@@ -50,9 +50,8 @@ export class StatisticalContextService {
 		const startTime = Date.now();
 
 		// Validate and parse timeframes configuration
-		if (!timeframes || typeof timeframes !== 'object' || Array.isArray(timeframes)) {
+		if (!timeframes || typeof timeframes !== 'object' || Array.isArray(timeframes)) 
 			throw new Error('timeframes must be an object with long/medium/short keys. Example: { long: "1w", medium: "1d", short: "1h" }');
-		}
 
 		const { timeframesArray, temporalityMap } = this._parseTimeframesConfig(timeframes);
 
@@ -90,22 +89,21 @@ export class StatisticalContextService {
 
 			// Assign to the corresponding temporality
 			// Since we now require explicit mapping, each timeframe goes to its designated slot
-			if (temporality) {
+			if (temporality) 
 				timeframesByTemporality[temporality] = {
 					timeframe: tf,
 					...data
 				};
-			}
+			
 		}
 
 		// Build bars summary for metadata
 		const barsSummary = {};
-		for (const [tf, data] of Object.entries(contexts)) {
+		for (const [tf, data] of Object.entries(contexts)) 
 			barsSummary[tf] = {
 				requested: data.bars_requested,
 				analyzed: data.bars_analyzed
 			};
-		}
 
 		return {
 			metadata: {
@@ -203,7 +201,7 @@ export class StatisticalContextService {
 		}
 
 		// Add coherence check for medium and full depth contexts
-		if (contextDepth.level !== 'light') {
+		if (contextDepth.level !== 'light') 
 			enriched.coherence_check = this._assessCoherence({
 				ema_alignment: enriched.moving_averages?.ema?.alignment,
 				macd_cross: enriched.momentum_indicators?.macd?.cross,
@@ -211,7 +209,6 @@ export class StatisticalContextService {
 				rsi_trend: enriched.momentum_indicators?.rsi?.trend,
 				regime: enriched.regime?.type
 			});
-		}
 
 		enriched.summary = this._generateSummary(enriched, contextDepth.level);
 
@@ -229,17 +226,15 @@ export class StatisticalContextService {
 		const temporalityMap = {};
 
 		// Extract timeframes and build reverse mapping
-		for (const [temporality, tf] of Object.entries(timeframes)) {
+		for (const [temporality, tf] of Object.entries(timeframes)) 
 			if (tf && ['long', 'medium', 'short'].includes(temporality)) {
 				timeframesArray.push(tf);
 				temporalityMap[tf] = temporality;
 			}
-		}
 
 		// Validate that at least one timeframe was provided
-		if (timeframesArray.length === 0) {
+		if (timeframesArray.length === 0) 
 			throw new Error('No valid timeframes found. Expected object with long/medium/short keys.');
-		}
 
 		return { timeframesArray, temporalityMap };
 	}
@@ -254,14 +249,12 @@ export class StatisticalContextService {
 		const timeframeMinutes = this._getTimeframeInMinutes(timeframe);
 
 		// Light context: Daily and above (>= 1440 minutes)
-		if (timeframeMinutes >= 1440) {
+		if (timeframeMinutes >= 1440) 
 			return { level: 'light', purpose: 'macro trend direction' };
-		}
 
 		// Medium context: 4h to less than daily (240-1439 minutes)
-		if (timeframeMinutes >= 240) {
+		if (timeframeMinutes >= 240) 
 			return { level: 'medium', purpose: 'structure and trend phase' };
-		}
 
 		// Full context: Hourly and below (< 240 minutes)
 		return { level: 'full', purpose: 'precise entry/exit timing' };
@@ -756,21 +749,19 @@ export class StatisticalContextService {
 
 		const result = {};
 
-		if (sr.resistance_levels?.length > 0) {
+		if (sr.resistance_levels?.length > 0) 
 			result.nearest_resistance = {
 				price: sr.resistance_levels[0].level,
 				type: sr.resistance_levels[0].type,
 				distance: sr.resistance_levels[0].distance,
 			};
-		}
 
-		if (sr.support_levels?.length > 0) {
+		if (sr.support_levels?.length > 0) 
 			result.nearest_support = {
 				price: sr.support_levels[0].level,
 				type: sr.support_levels[0].type,
 				distance: sr.support_levels[0].distance,
 			};
-		}
 
 		return Object.keys(result).length > 0 ? result : null;
 	}
@@ -820,9 +811,9 @@ export class StatisticalContextService {
 		const result = {};
 		for (const [key, value] of Object.entries(obj)) {
 			const cleaned = this._removeNulls(value);
-			if (cleaned !== undefined && cleaned !== null) {
+			if (cleaned !== undefined && cleaned !== null) 
 				result[key] = cleaned;
-			}
+			
 		}
 		return Object.keys(result).length > 0 ? result : undefined;
 	}
@@ -837,14 +828,13 @@ export class StatisticalContextService {
 		const { ema_alignment, macd_cross, psar_position, rsi_trend, regime } = indicators;
 
 		// Skip if insufficient data
-		if (!ema_alignment) {
+		if (!ema_alignment) 
 			return {
 				status: 'insufficient_data',
 				divergences: [],
 				interpretation: 'insufficient indicators for coherence check',
 				severity: 'none'
 			};
-		}
 
 		const divergences = [];
 
@@ -853,31 +843,25 @@ export class StatisticalContextService {
 		const isBearishStructure = ema_alignment.includes('bearish');
 
 		// Check MACD divergence
-		if (macd_cross) {
-			if (isBullishStructure && macd_cross === 'bearish') {
+		if (macd_cross) 
+			if (isBullishStructure && macd_cross === 'bearish') 
 				divergences.push('macd_bearish');
-			} else if (isBearishStructure && macd_cross === 'bullish') {
+			 else if (isBearishStructure && macd_cross === 'bullish') 
 				divergences.push('macd_bullish');
-			}
-		}
 
 		// Check PSAR divergence
-		if (psar_position) {
-			if (isBullishStructure && psar_position.includes('bearish')) {
+		if (psar_position) 
+			if (isBullishStructure && psar_position.includes('bearish')) 
 				divergences.push('psar_bearish');
-			} else if (isBearishStructure && psar_position.includes('bullish')) {
+			 else if (isBearishStructure && psar_position.includes('bullish')) 
 				divergences.push('psar_bullish');
-			}
-		}
 
 		// Check RSI trend divergence
-		if (rsi_trend) {
-			if (isBullishStructure && rsi_trend === 'declining') {
+		if (rsi_trend) 
+			if (isBullishStructure && rsi_trend === 'declining') 
 				divergences.push('rsi_weakening');
-			} else if (isBearishStructure && rsi_trend === 'rising') {
+			 else if (isBearishStructure && rsi_trend === 'rising') 
 				divergences.push('rsi_strengthening');
-			}
-		}
 
 		// Generate interpretation
 		let interpretation;
@@ -895,9 +879,8 @@ export class StatisticalContextService {
 		}
 
 		// Add context based on regime
-		if (regime && regime.includes('range') && divergences.length > 0) {
+		if (regime && regime.includes('range') && divergences.length > 0) 
 			interpretation += ' - common in ranging markets';
-		}
 
 		return {
 			status: divergences.length === 0 ? 'coherent' : 'diverging',
