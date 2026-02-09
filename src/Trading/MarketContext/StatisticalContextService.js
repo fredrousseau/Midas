@@ -620,6 +620,9 @@ export class StatisticalContextService {
 			llmContext.timeframes[temporality] = this._transformTimeframeForLLM(tfData);
 		}
 
+		// Add narrative synthesis
+		llmContext.narrative = this._generateNarrative(fullContext, alignment);
+
 		return llmContext;
 	}
 
@@ -888,6 +891,295 @@ export class StatisticalContextService {
 			interpretation,
 			severity
 		};
+	}
+
+	/**
+	 * Get human-readable label for a timeframe code
+	 * @private
+	 */
+	_getTimeframeLabel(timeframe) {
+		const labels = {
+			'1m': '1-minute (1m)', '5m': '5-minute (5m)', '15m': '15-minute (15m)',
+			'30m': '30-minute (30m)', '1h': 'hourly (1h)', '2h': '2-hour (2h)',
+			'4h': '4-hour (4h)', '1d': 'daily (1d)', '1w': 'weekly (1w)', '1M': 'monthly (1M)',
+		};
+		return labels[timeframe] || timeframe;
+	}
+
+	/**
+	 * Get the primary (highest-priority) timeframe data from available timeframes
+	 * Priority: long > medium > short
+	 * @private
+	 */
+	_getPrimaryTimeframe(timeframes) {
+		return timeframes.long || timeframes.medium || timeframes.short || null;
+	}
+
+	/**
+	 * Get the most detailed timeframe data (lowest granularity with full enrichment)
+	 * Priority: short > medium > long
+	 * @private
+	 */
+	_getDetailedTimeframe(timeframes) {
+		return timeframes.short || timeframes.medium || timeframes.long || null;
+	}
+
+	/**
+	 * Extract nearest support and resistance from the most detailed available timeframe
+	 * @private
+	 */
+	_getNearestLevels(timeframes) {
+		const detailed = this._getDetailedTimeframe(timeframes);
+		if (!detailed?.support_resistance) return null;
+
+		const sr = detailed.support_resistance;
+		return {
+			support: sr.support_levels?.[0] || null,
+			resistance: sr.resistance_levels?.[0] || null,
+			timeframe: detailed.timeframe,
+		};
+	}
+
+	/**
+	 * Generate a narrative synthesis of the market state
+	 * Produces dense, actionable text for LLM consumption
+	 * @param {Object} fullContext - Result from generateFullContext()
+	 * @param {Object} alignment - Multi-timeframe alignment data
+	 * @returns {Object} Narrative with market_state, cross_timeframe, momentum_phase, key_levels, watch_for
+	 * @private
+	 */
+	_generateNarrative(fullContext, alignment) {
+		const { timeframes, metadata } = fullContext;
+		const symbol = metadata.symbol;
+
+		return {
+			market_state: this._narrativeMarketState(symbol, timeframes, alignment),
+			cross_timeframe: this._narrativeCrossTimeframe(timeframes, alignment),
+			momentum_phase: this._narrativeMomentumPhase(timeframes),
+			key_levels: this._narrativeKeyLevels(timeframes),
+			watch_for: this._narrativeWatchFor(timeframes, alignment),
+		};
+	}
+
+	/**
+	 * Narrative: "What IS the market doing right now?"
+	 * @private
+	 */
+	_narrativeMarketState(symbol, timeframes, alignment) {
+		const primary = this._getPrimaryTimeframe(timeframes);
+		if (!primary) return `${symbol}: insufficient data for analysis.`;
+
+		const strength = this._interpretAlignmentScore(alignment.alignment_score);
+		const direction = alignment.dominant_direction;
+		const primaryLabel = this._getTimeframeLabel(primary.timeframe);
+		const primaryRegime = primary.regime?.interpretation || primary.regime?.type?.replace(/_/g, ' ') || 'unknown regime';
+
+		// Find confirming or contradicting timeframe
+		const detailed = this._getDetailedTimeframe(timeframes);
+		const detailedLabel = detailed && detailed !== primary ? this._getTimeframeLabel(detailed.timeframe) : null;
+		const detailedRegime = detailed?.regime?.type?.replace(/_/g, ' ');
+
+		if (strength === 'strong' || strength === 'moderate') {
+			let sentence = `${symbol} is in a ${direction} environment. The ${primaryLabel} shows ${primaryRegime}`;
+			if (detailedLabel && detailedRegime)
+				sentence += `, confirmed by ${detailedRegime} on the ${detailedLabel}`;
+			return sentence + '.';
+		}
+
+		// Weak or conflicting
+		let sentence = `${symbol} shows mixed signals. The ${primaryLabel} shows ${primaryRegime}`;
+		if (detailedLabel && detailedRegime)
+			sentence += `, but the ${detailedLabel} shows ${detailedRegime}`;
+		return sentence + '.';
+	}
+
+	/**
+	 * Narrative: "Do timeframes agree or disagree?"
+	 * @private
+	 */
+	_narrativeCrossTimeframe(timeframes, alignment) {
+		const tfCount = Object.values(timeframes).filter(Boolean).length;
+
+		if (tfCount <= 1)
+			return 'Single timeframe analysis -- no cross-timeframe validation available.';
+
+		const parts = [];
+
+		if (alignment.conflicts.length === 0) {
+			parts.push(`All ${tfCount} timeframes align ${alignment.dominant_direction} (score: ${alignment.alignment_score}). Structure and momentum are coherent across scales.`);
+		} else {
+			for (const conflict of alignment.conflicts) {
+				const prefix = conflict.severity === 'high' ? 'CONFLICT' : conflict.severity === 'moderate' ? 'Warning' : 'Note';
+				parts.push(`${prefix}: ${conflict.description}.`);
+			}
+		}
+
+		// Add coherence context from the most detailed timeframe
+		const detailed = this._getDetailedTimeframe(timeframes);
+		if (detailed?.coherence_check?.status === 'diverging') {
+			const label = this._getTimeframeLabel(detailed.timeframe);
+			parts.push(`Within the ${label}, ${detailed.coherence_check.interpretation}.`);
+		}
+
+		return parts.join(' ');
+	}
+
+	/**
+	 * Narrative: "Where are we in the trend lifecycle?"
+	 * @private
+	 */
+	_narrativeMomentumPhase(timeframes) {
+		// Find a timeframe with trend_phase info (prefer long, then medium)
+		const trendSource = timeframes.long || timeframes.medium || timeframes.short;
+		if (!trendSource) return 'Insufficient data for momentum phase assessment.';
+
+		const label = this._getTimeframeLabel(trendSource.timeframe);
+		const regimeType = trendSource.regime?.type || '';
+		const phase = trendSource.regime?.trend_phase;
+		const compression = trendSource.regime?.compression;
+
+		// RSI context from the most detailed timeframe that has it
+		const rsiSource = (timeframes.medium || timeframes.short);
+		const rsi = rsiSource?.momentum_indicators?.rsi;
+		const rsiContext = rsi ? `RSI at ${rsi.value} on the ${this._getTimeframeLabel(rsiSource.timeframe)} is ${rsi.interpretation}` : null;
+
+		// Volatility context
+		const volSource = (timeframes.medium || timeframes.short);
+		const atr = volSource?.volatility_indicators?.atr;
+
+		// Trending regime
+		if (regimeType.startsWith('trending_')) {
+			const phaseText = phase === 'nascent'
+				? `Trend is nascent on the ${label} (ADX rising) -- early-stage momentum typically offers favorable risk/reward`
+				: phase === 'exhausted'
+					? `Trend appears exhausted on the ${label} (ADX declining)`
+					: `Trend is mature on the ${label}`;
+
+			const rsiAddition = rsi?.divergence && rsi.divergence !== 'none' && !rsi.divergence.includes('aligned')
+				? `. ${rsi.divergence}`
+				: rsiContext ? `. ${rsiContext}` : '';
+
+			return phaseText + rsiAddition + '.';
+		}
+
+		// Breakout regime
+		if (regimeType.startsWith('breakout_')) {
+			const quality = trendSource.regime?.breakout_quality;
+			const qualityText = quality ? ` (${quality.grade} quality: ${quality.factors?.join(', ')})` : '';
+			const compressionText = compression?.detected ? ' Following prior volatility compression.' : '';
+			return `Breakout detected on the ${label}${qualityText}.${compressionText}`;
+		}
+
+		// Range regime
+		const rangeSubtype = regimeType.replace('range_', '').replace(/_/g, ' ');
+		const subtypeImpliesVol = regimeType.includes('low_vol') || regimeType.includes('high_vol');
+		const volText = (!subtypeImpliesVol && atr) ? ` ${atr.interpretation}.` : '.';
+		const compressionText = compression?.detected ? ' ATR compression suggests imminent volatility expansion.' : '';
+		return `No directional trend on the ${label}. Market is ranging (${rangeSubtype})${volText}${compressionText}`;
+	}
+
+	/**
+	 * Narrative: "What prices matter?"
+	 * @private
+	 */
+	_narrativeKeyLevels(timeframes) {
+		const parts = [];
+
+		// Nearest S/R from the most detailed timeframe
+		const levels = this._getNearestLevels(timeframes);
+		if (levels) {
+			if (levels.support)
+				parts.push(`Nearest support: ${levels.support.level} (${levels.support.type}, ${levels.support.distance})`);
+			if (levels.resistance)
+				parts.push(`Nearest resistance: ${levels.resistance.level} (${levels.resistance.type}, ${levels.resistance.distance})`);
+		}
+
+		// Range bounds from any range regime
+		for (const [temporality, tfData] of Object.entries(timeframes)) {
+			if (!tfData?.regime?.range_bounds) continue;
+			const rb = tfData.regime.range_bounds;
+			const label = this._getTimeframeLabel(tfData.timeframe);
+			parts.push(`Range bounds on ${label}: ${rb.low}-${rb.high} (${rb.strength} strength, ${rb.proximity})`);
+			break; // Only report from one timeframe
+		}
+
+		// Pattern invalidation from short timeframe
+		const detailed = this._getDetailedTimeframe(timeframes);
+		if (detailed?.micro_patterns)
+			for (const p of detailed.micro_patterns)
+				if (p.invalidation) {
+					parts.push(`${p.pattern} invalidation at ${p.invalidation}`);
+					break;
+				}
+
+		return parts.length > 0 ? parts.join('. ') + '.' : 'No clear support/resistance levels identified from recent structure.';
+	}
+
+	/**
+	 * Narrative: "What would change the picture?"
+	 * @private
+	 */
+	_narrativeWatchFor(timeframes, alignment) {
+		const parts = [];
+		const direction = alignment.dominant_direction;
+		const levels = this._getNearestLevels(timeframes);
+
+		// Direction-based watch items
+		if (direction === 'bullish' && levels?.support)
+			parts.push(`Failure to hold ${levels.support.level} (${levels.support.type}) would be the first sign of structural weakness`);
+		else if (direction === 'bearish' && levels?.resistance)
+			parts.push(`Break above ${levels.resistance.level} (${levels.resistance.type}) would invalidate the bearish structure`);
+
+		// Range breakout watch
+		for (const [, tfData] of Object.entries(timeframes)) {
+			if (!tfData?.regime?.range_bounds) continue;
+			const rb = tfData.regime.range_bounds;
+			parts.push(`Break of ${rb.low} or ${rb.high} with volume confirmation would signal range resolution`);
+			break;
+		}
+
+		// BB squeeze alert
+		for (const [, tfData] of Object.entries(timeframes)) {
+			if (!tfData?.volatility_indicators?.bollinger_bands?.squeeze_detected) continue;
+			const label = this._getTimeframeLabel(tfData.timeframe);
+			parts.push(`BB squeeze on ${label} may trigger the next directional leg`);
+			break;
+		}
+
+		// Compression alert (if not already covered by range bounds)
+		for (const [, tfData] of Object.entries(timeframes)) {
+			if (!tfData?.regime?.compression?.detected) continue;
+			if (tfData.regime?.type?.startsWith('range_')) continue; // Already covered by range bounds
+			const label = this._getTimeframeLabel(tfData.timeframe);
+			parts.push(`ATR compression on ${label} often precedes a significant move`);
+			break;
+		}
+
+		// RSI extreme warning
+		const detailed = this._getDetailedTimeframe(timeframes);
+		const rsi = detailed?.momentum_indicators?.rsi;
+		if (rsi) {
+			if (rsi.value > 75)
+				parts.push(`RSI at ${rsi.value} is deeply overbought -- pullback risk is elevated`);
+			else if (rsi.value < 25)
+				parts.push(`RSI at ${rsi.value} is deeply oversold -- bounce risk is elevated`);
+		}
+
+		// Pattern implication
+		if (detailed?.micro_patterns)
+			for (const p of detailed.micro_patterns) {
+				parts.push(`${p.pattern} (${p.confidence} confidence) suggests ${p.implication}`);
+				break;
+			}
+
+		// Conflict warning
+		if (alignment.conflicts.some(c => c.severity === 'high'))
+			parts.push('Until timeframes resolve their conflict, whipsaw risk is elevated');
+
+		if (parts.length === 0)
+			return 'No specific triggers identified. Monitor for regime changes on the primary timeframe.';
+
+		return 'Watch for: ' + parts.join('. ') + '.';
 	}
 }
 
