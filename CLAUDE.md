@@ -4,310 +4,176 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Midas is a sophisticated multi-timeframe trading analysis platform that transforms raw market data into actionable trading decisions through a 5-layer hierarchical architecture.
-
-**Core Technologies:**
-- Node.js v20.x (required, enforced at startup)
-- Express.js (REST API)
-- Binance API (market data source)
-- Redis (optional caching layer)
-- OAuth 2.0 (authentication)
-- MCP (Model Context Protocol) integration
+Midas is a multi-timeframe trading analysis platform that transforms raw market data into actionable trading context through a 5-layer hierarchical architecture. Built on Node.js v20.x with Express, Binance API, Redis caching, OAuth 2.0 authentication, and MCP (Model Context Protocol) integration.
 
 ## Development Commands
 
-### Running the Server
-
 ```bash
-# Standard mode
-npm start
+npm start                                    # Standard mode (enforces Node.js v20.x via prestart)
+npm run debug                                # Debug mode (enhanced logging)
+LOG_LEVEL=verbose npm start                  # Verbose logging
 
-# Debug mode (enhanced logging)
-npm run debug
-
-# The prestart script enforces Node.js v20.x
+# Testing
+./scripts/RUN_ALL_TESTS.sh                   # Run all test suites
+node scripts/validate-critical-fixes.js      # 14 tests - Config validation
+node scripts/test-enrichers-functional.js    # 42 tests - Enricher lookback periods with mock data
+node scripts/test-integration-api.js         # 13 tests - Real service imports and execution
 ```
 
-### Testing
+## Environment Setup
 
-```bash
-# Run all test suites
-./scripts/RUN_ALL_TESTS.sh
-
-# Individual test suites
-node scripts/validate-critical-fixes.js      # 20 tests - Config validation
-node scripts/test-enrichers-functional.js    # 41 tests - Lookback periods with mock data
-node scripts/test-integration-api.js         # 30 tests - Real service imports and execution
-
-# Expected: 90/91 tests passing (98.9%)
-```
-
-### Environment Configuration
-
-Copy `.env.sample` to `.env` and configure:
-
-**Critical settings:**
-- `SECURED_SERVER=false` for development (skips OAuth)
-- `REDIS_ENABLED=true` if Redis is running (significantly improves performance)
+Copy `.env.sample` to `.env`. Key settings:
+- `SECURED_SERVER=false` for development (skips OAuth on API routes)
+- `REDIS_ENABLED=true` if Redis is running (critical for avoiding Binance rate limits)
 - `LOG_LEVEL=verbose` for detailed debugging
 - `NODE_ENV=development` for stack traces in error responses
+- `MAX_DATA_POINTS=5000` - Maximum bars per API request
 
-**Redis configuration:**
-```bash
-# Install Redis (macOS)
-brew install redis
-brew services start redis
+## Architecture
 
-# Then enable in .env
-REDIS_ENABLED=true
-REDIS_HOST=localhost
-REDIS_PORT=6379
-REDIS_CACHE_TTL=300  # 5 minutes
-REDIS_MAX_BARS_PER_KEY=10000
-```
-
-**Data provider settings:**
-- `MAX_DATA_POINTS=5000` - Maximum bars per API request (increase if your data source supports more)
-  - Binance supports up to ~1000-1500 depending on timeframe
-  - Set higher for large historical analyses
-  - DataProvider will validate against this limit
-
-## Architecture Overview
-
-### 5-Layer Architecture
+### 5-Layer Pipeline
 
 ```
-LAYER 1: Infrastructure (BinanceAdapter → DataProvider)
-    ↓
+LAYER 1: Infrastructure (BinanceAdapter -> DataProvider with Redis cache)
+    |
 LAYER 2: Technical Calculation (IndicatorService - 40+ indicators)
-    ↓
-LAYER 3: Contextual Analysis (RegimeDetection + StatisticalContext with 6 Enrichers)
-    ↓
-LAYER 4: Decision & Strategy (MarketAnalysisService + TradingContextService)
-    ↓
+    |
+LAYER 3: Contextual Analysis (RegimeDetectionService + StatisticalContextService with 6 Enrichers)
+    |
+LAYER 4: Context Generation (MarketContextService - orchestrates layers 1-3)
+    |
 LAYER 5: API Exposure (REST endpoints + WebUI)
 ```
 
 ### Key Services Flow
 
-**Market Analysis Request:**
-1. `MarketAnalysisService.analyze()` - Entry point, orchestrates entire analysis
+1. `MarketContextService.generateContext()` / `.generateLLMContext()` - Entry point
 2. `StatisticalContextService.generateFullContext()` - Gathers multi-timeframe statistical data
-3. 6 Enrichers execute in parallel (Momentum, Volatility, Volume, MovingAverages, PriceAction, Patterns)
-4. `RegimeDetectionService` - Identifies market regime (9 types: trending/ranging/breakout × bull/bear/neutral)
+3. 6 Enrichers execute in parallel: Momentum, Volatility, Volume, MovingAverages, PriceAction, Patterns
+4. `RegimeDetectionService` - Identifies market regime (9 types: trending/ranging/breakout x bull/bear/neutral)
 5. Alignment analysis - Weighted multi-timeframe scoring
-6. `TradingContextService.generateTradingContext()` - Produces actionable recommendations
-7. Returns complete analysis with recommended_action (TRADE/PREPARE/CAUTION/WAIT)
+6. Returns complete context (raw technical data or LLM-optimized format)
 
-### Critical Configuration Files
+### Critical Configuration
 
-**DO NOT hardcode values** - All parameters are centralized:
+**DO NOT hardcode values** - All parameters are centralized in `src/Trading/MarketContext/config/`:
 
-1. **Bar Counts** (`src/Trading/MarketAnalysis/config/barCounts.js`)
-   - OHLCV_BAR_COUNTS: How many bars to fetch per timeframe
-   - INDICATOR_BAR_COUNTS: How many bars for indicator calculations
-   - EMA200_BAR_COUNTS: Special requirements for long-period EMAs
-   - REGIME_MIN_BARS: Minimum bars for regime detection
-   - **Rule:** OHLCV count must be ≥ INDICATOR count + 50 bars margin
+- **`barCounts.js`** - OHLCV_BAR_COUNTS, INDICATOR_BAR_COUNTS, EMA200_BAR_COUNTS, REGIME_MIN_BARS
+  - Rule: OHLCV count must be >= INDICATOR count + 50 bars margin
+- **`lookbackPeriods.js`** - STATISTICAL_PERIODS, TREND_PERIODS, PATTERN_PERIODS, VOLUME_PERIODS, SUPPORT_RESISTANCE_PERIODS, PATTERN_ATR_MULTIPLIERS
 
-2. **Lookback Periods** (`src/Trading/MarketAnalysis/config/lookbackPeriods.js`)
-   - STATISTICAL_PERIODS: For percentile calculations, mean/std
-   - TREND_PERIODS: For slope calculations, trend detection
-   - PATTERN_PERIODS: For swing detection, structure analysis
-   - VOLUME_PERIODS: For volume analysis, OBV trends
-   - SUPPORT_RESISTANCE_PERIODS: For S/R level identification
-   - PATTERN_ATR_MULTIPLIERS: For swing significance thresholds
-
-**Validation runs at module load** - configuration errors will prevent server startup.
-
-### Data Flow Architecture
-
-**Data Pipeline:**
-- **MarketDataService** → DataProvider → Redis cache → BinanceAdapter (OHLCV data)
-- **MarketAnalysisService** → StatisticalContext, RegimeDetection, TradingContext (full analysis)
-
-**Key points:**
-- Caching via Redis (DataProvider)
-- **Redis is essential** for avoiding rate limits during intensive analysis
+Validation runs at module load - configuration errors prevent server startup.
 
 ## Important Code Patterns
 
-### Authentication Middleware
+### Path Aliases (package.json imports)
 
-Routes support **dual authentication**:
 ```javascript
-// API routes accept BOTH:
-1. Bearer token in Authorization header (for API clients)
-2. HTTP-only cookie webui_auth_token (for WebUI)
-
-// Implementation in routes.js lines 117-141
+import { something } from '#utils/helpers.js';    // ./src/Utils/*
+import { Service } from '#trading/Module/File.js'; // ./src/Trading/*
+import { logger } from '#logger';                  // ./src/Logger/LoggerService.js
+import { Mcp } from '#mcp/McpService.js';          // ./src/Mcp/*
+import { Data } from '#data/File.js';              // ./src/Data/*
 ```
 
-### Error Handling Structure
+### Async Route Handler
 
-Backend returns structured errors:
+All routes use `asyncHandler` wrapper - return values are automatically wrapped in `{ success: true, data: ... }`. Errors are caught by the global error handler. Set `error.statusCode` for non-500 responses.
+
+### Dual Authentication
+
+API routes accept both Bearer token (Authorization header) and HTTP-only cookie (`webui_auth_token`). When `SECURED_SERVER=false`, API routes skip auth entirely but WebUI still requires cookie auth.
+
+### Error Response Structure
+
 ```javascript
-{
-  success: false,
-  error: {
-    type: "Error",
-    message: "Actual error message"
-  }
-}
+{ success: false, error: { type: "Error", message: "Actual error message" } }
 ```
 
-**Frontend must extract:** `errorData.error.message` (not `errorData.error` which is an object)
+Frontend must extract `errorData.error.message` (not `errorData.error` which is an object).
 
-### Async Route Handler Pattern
+### Service Dependencies
 
-All routes use `asyncHandler` wrapper:
-```javascript
-app.post('/api/v1/endpoint',
-  asyncHandler(async (req) => {
-    // Return value is automatically wrapped in { success: true, data: ... }
-    return result;
-
-    // Errors are caught and passed to global error handler
-    // Set error.statusCode for non-500 responses
-  })
-);
-```
+`MarketContextService` requires `logger`, `dataProvider`, `indicatorService` in constructor options. Missing any causes "requires X instance in options" error.
 
 ### DataProvider Usage
 
-**Correct method names:**
-- `loadOHLCV(options)` - NOT `getOHLCV`
+- Method: `loadOHLCV(options)` - NOT `getOHLCV`
 - Parameters: `{ symbol, timeframe, count, from, to, analysisDate }`
-- `to` must be **timestamp in milliseconds** (use `date.getTime()`), not Date object
+- `to` must be **timestamp in milliseconds** (`date.getTime()`), not a Date object
 
-## Common Pitfalls
+## API Endpoints
 
-1. **Date to Timestamp Conversion**
-   - Binance API expects numeric timestamps, not Date objects
-   - Always use `date.getTime()` when passing dates to loadOHLCV
+**Context (main analysis):**
+- `GET /api/v1/context/enriched?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Full multi-timeframe context
+- `GET /api/v1/context/llm?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - LLM-optimized context
 
-2. **Service Dependencies**
-   - MarketAnalysisService requires: `dataProvider`, `indicatorService`, `logger`
-   - Missing any dependency causes "requires X instance in options" error
+**Market Data:**
+- `GET /api/v1/market-data/price/:symbol` - Current price
+- `GET /api/v1/market-data/ohlcv?symbol=BTCUSDT&timeframe=1h&count=100` - Historical candles
+- `GET /api/v1/market-data/pairs` - Available trading pairs
 
-3. **WebUI Error Display**
-   - Error responses have nested structure: `errorData.error.message`
-   - Don't display `errorData.error` directly (shows "[object Object]")
+**Indicators:**
+- `GET /api/v1/indicators/catalog` - List all available indicators
+- `GET /api/v1/indicators/:name` - Indicator metadata
+- `GET /api/v1/indicators/:name/series?symbol=BTCUSDT&timeframe=1h&bars=200` - Indicator time series
 
-4. **Redis Caching**
-   - Performance heavily depends on Redis being enabled
-   - Check connection: `redis-cli ping` should return `PONG`
-   - Logs show "Redis cache disabled" if REDIS_ENABLED=false or connection fails
+**Regime Detection:**
+- `GET /api/v1/regime/detect?symbol=BTCUSDT&timeframe=1h` - Detect market regime
+
+**Cache Management:**
+- `GET /api/v1/cache/stats` - Cache statistics
+- `DELETE /api/v1/cache/clear` - Clear cache (optional `?symbol=&timeframe=`)
+
+**MCP:**
+- `GET /api/v1/mcp/tools` - List MCP tools
+- `POST /api/v1/mcp` - MCP request handler
+
+**Utility:**
+- `GET /api/v1/utility/config` - Client configuration (timezone)
+- `GET /api/v1/utility/status` - Health check
 
 ## File Structure
 
 ```
 src/
-├── DataProvider/          # Market data fetching + Redis cache
-│   ├── BinanceAdapter.js  # Binance API client
-│   ├── DataProvider.js    # Cache layer
-│   └── CacheManager.js    # Redis management
-├── Trading/
-│   ├── Indicator/         # 40+ technical indicators
-│   ├── MarketData/        # OHLCV data service
-│   ├── MarketAnalysis/    # Core analysis engine
-│   │   ├── config/        # ⚠️ CRITICAL: All configurable parameters
-│   │   ├── StatisticalContext/  # 6 Enrichers
-│   │   ├── RegimeDetection/     # Market regime classification
-│   │   └── TradingContext/      # Actionable recommendations
-├── OAuth/                 # Authentication services
-├── Mcp/                   # Model Context Protocol
-├── WebUI/                 # Web interface (HTML/JS/CSS)
-├── routes.js              # All API endpoint definitions
-└── server.js              # Main entry point
+  DataProvider/              # BinanceAdapter, DataProvider (Redis cache), CacheManager
+  Trading/
+    Indicator/               # 40+ technical indicators (IndicatorService)
+    MarketData/              # OHLCV data service (MarketDataService)
+    MarketContext/            # Core analysis engine
+      MarketContextService.js      # Orchestrator - entry point for all analysis
+      StatisticalContextService.js # Multi-timeframe statistical data
+      RegimeDetectionService.js    # Market regime classification
+      config/                      # barCounts.js, lookbackPeriods.js
+      enrichers/                   # 6 enrichers: Momentum, Volatility, Volume,
+                                   # MovingAverages, PriceAction, PatternDetector
+  OAuth/                     # OAuthService, WebUIAuthService
+  Mcp/                       # Model Context Protocol service
+  WebUI/                     # Web interface (HTML/JS/CSS)
+  Logger/                    # Winston logging with daily rotation
+  Utils/                     # Helpers (asyncHandler, parseTradingParams, etc.)
+  routes.js                  # All API endpoint definitions
+  server.js                  # Main entry point, service initialization
 
 scripts/
-├── RUN_ALL_TESTS.sh       # Master test runner
-├── validate-critical-fixes.js
-├── test-enrichers-functional.js
-└── test-integration-api.js
-
-docs/
-├── DOCUMENTATION.md       # Complete documentation
-└── scripts/README_TESTS.md
+  RUN_ALL_TESTS.sh           # Master test runner
+  README_TESTS.md            # Testing documentation
 ```
 
-## API Endpoints Reference
+## Linting
 
-**Analysis:**
-- `GET /api/v1/analysis?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Multi-timeframe analysis
-- `GET /api/v1/quick-check?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Lightweight check
+ESLint v9 with flat config (`eslint.config.js`). Key rules: `no-undef` (error), `no-unused-vars` (warn, ignores `_` prefixed), `curly` (multi/consistent), `no-multiple-empty-lines` (max 1).
 
-**Market Data:**
-- `GET /api/v1/price/:symbol` - Current price
-- `GET /api/v1/ohlcv?symbol=BTCUSDT&timeframe=1h&count=100` - Historical candles
-- `GET /api/v1/pairs` - Available trading pairs
+## Common Pitfalls
 
-**Indicators:**
-- `GET /api/v1/indicator/:indicator?symbol=BTCUSDT&timeframe=1h&bars=200`
-
-## WebUI Access
-
-Navigate to `http://localhost:3000` after starting the server.
-
-**Available pages:**
-- `/` - Main analysis dashboard
-
-**Authentication:**
-- Uses HTTP-only cookies (more secure than localStorage)
-- Credentials from .env: `WEBUI_USERNAME` / `WEBUI_PASSWORD`
-- Session persists across page refreshes
-
-## Debugging Tips
-
-1. **Enable verbose logging:**
-   ```bash
-   LOG_LEVEL=verbose npm start
-   ```
-
-2. **Check service initialization:**
-   Look for these log messages at startup:
-   - "DataProvider initialized with Redis-only cache" (or warning if disabled)
-   - "IndicatorService initialized"
-   - "MarketAnalysisService initialized"
-
-3. **Monitor API calls:**
-   - Each request logs: `{ip} {method} {path} - {status} - {duration}ms`
-   - Watch for repeated identical requests (cache miss indicator)
-
-4. **Common error patterns:**
-   - "requires X instance in options" → Missing service dependency in constructor
-   - "Illegal characters in parameter endTime" → Passing Date instead of timestamp
-   - "is not a function" → Wrong method name (e.g., getOHLCV vs loadOHLCV)
-   - "[object Object]" in UI → Incorrect error message extraction from backend
-
-## Git Workflow
-
-**Commits require Co-Authored-By tag:**
-```bash
-git commit -m "Your message
-
-Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>"
-```
-
-**Never force-push to main/master** without explicit user request.
-
-## Performance Considerations
-
-1. **Redis is critical for production** - Without it, every analysis hits Binance API
-2. **Bar count trade-offs:**
-   - Higher counts = more historical context but slower API calls
-   - Lower counts = faster but less reliable indicators
-   - Current defaults are optimized for balance (see barCounts.js)
-
-3. **Multi-timeframe alignment:**
-   - 3 timeframes typical: long (trend), medium (structure), short (entry timing)
-   - More timeframes = exponentially more API calls without cache
+1. **Date vs Timestamp** - Binance API expects numeric timestamps. Always use `date.getTime()`, never pass Date objects to `loadOHLCV`.
+2. **Method names** - `loadOHLCV` not `getOHLCV`. `generateContext` / `generateLLMContext` not `analyze`.
+3. **Error display** - Extract `errorData.error.message`, not `errorData.error` (shows "[object Object]").
+4. **Redis** - Without it, every analysis hits Binance API directly. Check with `redis-cli ping`.
+5. **Config sync** - Bar counts and lookback periods must be coordinated. OHLCV >= INDICATOR + 50 margin.
 
 ## Documentation
 
-Primary docs in `/docs`:
-- `DOCUMENTATION.md` - Complete technical documentation
+- `docs/DOCUMENTATION.md` - Complete technical documentation (French)
 - `scripts/README_TESTS.md` - Testing guide
-
-**These docs are comprehensive** - read them before making changes to analysis logic.
