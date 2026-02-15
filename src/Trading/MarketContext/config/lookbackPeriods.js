@@ -105,13 +105,11 @@ export function getLookbackPeriod(category, type) {
 	};
 
 	const periods = categories[category];
-	if (!periods) {
+	if (!periods) 
 		throw new Error(`Unknown lookback category: ${category}`);
-	}
 
-	if (!(type in periods)) {
+	if (!(type in periods)) 
 		throw new Error(`Unknown type '${type}' in category '${category}'`);
-	}
 
 	return periods[type];
 }
@@ -146,12 +144,12 @@ export function validateLookbackPeriods(barCounts) {
 		const count = barCounts[tf];
 		if (!count) continue;
 
-		if (count < maxLookback) {
+		if (count < maxLookback) 
 			warnings.push(
 				`WARNING: ${tf} has ${count} bars but max lookback period is ${maxLookback}. ` +
 				`Some calculations may fail or use incomplete data.`
 			);
-		}
+		
 	}
 
 	return warnings;

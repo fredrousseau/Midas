@@ -1,3 +1,4 @@
+/* exported initDataPanel, setupChartClickListeners, dataPanelOpen, currentClickedData */
 // Data panel management - displays candle and indicator data on click
 
 let dataPanelOpen = false;
@@ -178,8 +179,8 @@ function setupChartClickListeners() {
         // Get the candle data at click time
         const candleData = param.seriesData.get(candlestickSeries);
 
-        if (candleData) {
+        if (candleData) 
             updateDataPanel(param.time, candleData);
-        }
+        
     });
 }

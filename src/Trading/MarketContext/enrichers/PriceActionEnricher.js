@@ -288,7 +288,7 @@ export class PriceActionEnricher {
 		const currentPrice = bars[bars.length - 1].close;
 		
 		// Position in range
-		const position = ((currentPrice - low24h) / range) * 100;
+		const _position = ((currentPrice - low24h) / range) * 100;
 
 		return `${round(low24h, 0)}-${round(high24h, 0)} (${round(range, 0)} points)`;
 	}

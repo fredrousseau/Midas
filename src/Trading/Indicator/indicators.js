@@ -255,7 +255,7 @@ export class Indicator {
 			// For StochRSI and ADX, pass the instance itself to access additional values
 			const needsInstance = indicatorKey === 'stochRsi' || indicatorKey === 'adx';
 			this._mapResultToSeries(indicatorKey, needsInstance ? instance : result, series);
-		} catch (error) {
+		} catch {
 			for (const seriesKey of this._getSeriesKeys(indicatorKey)) this._addToSeries(series, seriesKey, null);
 		}
 	}

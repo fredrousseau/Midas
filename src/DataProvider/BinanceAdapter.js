@@ -58,7 +58,7 @@ export class BinanceAdapter extends GenericAdapter {
 			}
 
 			const rawData = await response.json();
-			const duration = Date.now() - startTime;
+			const _duration = Date.now() - startTime;
 
 			// Transform Binance format to standard OHLCV format
 			const ohlcv = rawData.map((candle) => ({

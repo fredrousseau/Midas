@@ -273,9 +273,9 @@ app.use((err, req, res, next) => {
 	} else {
 		logger.error(`Server error ${clientInfo}: ${errorDetails}`);
 		// Log stack trace for server errors
-		if (err.stack) {
+		if (err.stack) 
 			logger.error(`Stack trace:\n${err.stack}`);
-		}
+		
 	}
 
 	// Don't send response if headers already sent

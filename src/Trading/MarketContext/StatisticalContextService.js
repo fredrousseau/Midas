@@ -12,7 +12,7 @@ import PriceActionEnricher from './enrichers/PriceActionEnricher.js';
 import PatternDetector from './enrichers/PatternDetector.js';
 import { round } from '../../Utils/statisticalHelpers.js';
 import { getBarCount } from './config/barCounts.js';
-import { STATISTICAL_PERIODS, TREND_PERIODS, PATTERN_PERIODS, SUPPORT_RESISTANCE_PERIODS } from './config/lookbackPeriods.js';
+import { PATTERN_PERIODS, SUPPORT_RESISTANCE_PERIODS } from './config/lookbackPeriods.js';
 
 export class StatisticalContextService {
 	constructor(options = {}) {

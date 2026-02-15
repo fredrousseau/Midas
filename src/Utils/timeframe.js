@@ -26,18 +26,18 @@ export function timeframeToMs(timeframe, options = {}) {
 	const match = timeframe.match(/^(\d+)([mhdwM])$/);
 
 	if (!match) {
-		if (throwOnError) {
+		if (throwOnError) 
 			throw new Error(`Invalid timeframe format: ${timeframe}`);
-		}
+		
 		return defaultValue;
 	}
 
 	const unitMs = units[match[2]];
 
 	if (!unitMs) {
-		if (throwOnError) {
+		if (throwOnError) 
 			throw new Error(`Unknown timeframe unit: ${match[2]}`);
-		}
+		
 		return defaultValue;
 	}
 

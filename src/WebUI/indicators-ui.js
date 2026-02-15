@@ -1,3 +1,4 @@
+/* exported buildIndicatorUI */
 // Build indicator UI dynamically from catalog
 async function buildIndicatorUI() {
     try {
@@ -20,8 +21,8 @@ async function buildIndicatorUI() {
 
         // Count total indicators
         let totalIndicators = 0;
-        for (const [category, data] of Object.entries(catalog)) 
-            if (data.indicators && Array.isArray(data.indicators)) 
+        for (const [_category, data] of Object.entries(catalog))
+            if (data.indicators && Array.isArray(data.indicators))
                 totalIndicators += data.indicators.length;
 
         // Update stats

@@ -420,7 +420,7 @@ export class OAuthService {
 					valid: false,
 					error: 'Invalid signature',
 				};
-		} catch (error) {
+		} catch {
 			return {
 				valid: false,
 				error: 'Signature verification failed',

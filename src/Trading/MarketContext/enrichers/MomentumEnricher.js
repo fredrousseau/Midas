@@ -17,8 +17,8 @@ export class MomentumEnricher {
 	 */
 	async enrich({ ohlcvData, indicatorService, symbol, timeframe, higherTimeframeData, referenceDate }) {
 		const closes = ohlcvData.bars.map(b => b.close);
-		const highs = ohlcvData.bars.map(b => b.high);
-		const lows = ohlcvData.bars.map(b => b.low);
+		const _highs = ohlcvData.bars.map(b => b.high);
+		const _lows = ohlcvData.bars.map(b => b.low);
 
 		// Get indicator series from IndicatorService
 		const rsiSeries = await this._getIndicatorSafe(indicatorService, symbol, 'rsi', timeframe, referenceDate);
@@ -358,7 +358,7 @@ export class MomentumEnricher {
 		if (!current.values || !previous.values) return 'insufficient data';
 
 		const currentCross = current.values.macd > current.values.macdSignal;
-		const previousCross = previous.values.macd > previous.values.macdSignal;
+		const _previousCross = previous.values.macd > previous.values.macdSignal;
 
 		// Find bars since cross
 		let barsSinceCross = 0;

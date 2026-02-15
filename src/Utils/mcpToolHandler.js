@@ -5,7 +5,7 @@
 
 import { mcpSuccess, mcpError } from './mcpResponse.js';
 
-export function createToolHandler(handler, logger, toolName = 'Tool') {
+export function createToolHandler(handler, logger, _toolName = 'Tool') {
 	return async (params) => {
 		try {
 			const result = await handler(params);

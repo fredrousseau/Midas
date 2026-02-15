@@ -106,28 +106,26 @@ export function validateBarCounts() {
 		const ohlcv = OHLCV_BAR_COUNTS[tf];
 		const indicator = INDICATOR_BAR_COUNTS[tf];
 
-		if (indicator > ohlcv) {
+		if (indicator > ohlcv) 
 			errors.push(
 				`CRITICAL: ${tf} indicator bars (${indicator}) > OHLCV bars (${ohlcv}). ` +
 				`Indicators will have insufficient data!`
 			);
-		}
 
 		const margin = ohlcv - indicator;
-		if (margin < 30) {
+		if (margin < 30) 
 			errors.push(
 				`WARNING: ${tf} has only ${margin} bars margin between OHLCV and indicator. ` +
 				`Recommended minimum: 50 bars for warmup.`
 			);
-		}
+		
 	}
 
-	if (REGIME_MIN_BARS < 50) {
+	if (REGIME_MIN_BARS < 50) 
 		errors.push(
 			`CRITICAL: REGIME_MIN_BARS (${REGIME_MIN_BARS}) is too low. ` +
 			`Minimum recommended: 50 for stable regime detection.`
 		);
-	}
 
 	return errors;
 }
@@ -160,12 +158,12 @@ export function getBarCount(useCase, timeframe) {
 const validationErrors = validateBarCounts();
 if (validationErrors.length > 0) {
 	const criticalErrors = validationErrors.filter(e => e.startsWith('CRITICAL'));
-	if (criticalErrors.length > 0) {
+	if (criticalErrors.length > 0) 
 		throw new Error(
 			'Bar counts configuration has critical errors:\n' +
 			criticalErrors.join('\n')
 		);
-	}
+	
 	// Log warnings but don't throw
 	console.warn('Bar counts configuration warnings:\n' + validationErrors.join('\n'));
 }

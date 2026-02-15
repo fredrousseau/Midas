@@ -67,9 +67,9 @@ export class PatternDetector {
 			if (momentumIndicators || trendIndicators) {
 				const momentumQuality = this._assessMomentumQuality(pattern, momentumIndicators, trendIndicators);
 				pattern.momentum_quality = momentumQuality.quality;
-				if (momentumQuality.warning) {
+				if (momentumQuality.warning) 
 					pattern.warning = momentumQuality.warning;
-				}
+				
 			}
 
 			// Add ATR context for risk management
@@ -170,7 +170,7 @@ export class PatternDetector {
 		const recent = bars.slice(-PATTERN_PERIODS.flagRecent);
 
 		// Dynamic pole search: test all pole durations between poleMinBars and poleMaxBars
-		for (let poleEnd = recent.length - 5; poleEnd >= PATTERN_PERIODS.poleMinLength; poleEnd--) {
+		for (let poleEnd = recent.length - 5; poleEnd >= PATTERN_PERIODS.poleMinLength; poleEnd--) 
 			for (let poleLen = PATTERN_PERIODS.poleMinBars; poleLen <= PATTERN_PERIODS.poleMaxBars; poleLen++) {
 				const poleStart = poleEnd - poleLen;
 				if (poleStart < 0) continue;
@@ -221,7 +221,6 @@ export class PatternDetector {
 					status: 'forming'
 				};
 			}
-		}
 
 		return null;
 	}
@@ -454,9 +453,8 @@ export class PatternDetector {
 	 */
 	_assessMomentumQuality(pattern, momentumIndicators, trendIndicators) {
 		// Skip for neutral patterns
-		if (!pattern.bias || pattern.bias === 'neutral') {
+		if (!pattern.bias || pattern.bias === 'neutral') 
 			return { quality: 'neutral' };
-		}
 
 		const isBullishPattern = pattern.bias === 'bullish';
 		const conflictingSignals = [];
@@ -464,47 +462,47 @@ export class PatternDetector {
 		// Check MACD
 		if (momentumIndicators?.macd?.cross) {
 			const macdCross = momentumIndicators.macd.cross;
-			if (isBullishPattern && macdCross === 'bearish') {
+			if (isBullishPattern && macdCross === 'bearish') 
 				conflictingSignals.push('MACD bearish');
-			} else if (!isBullishPattern && macdCross === 'bullish') {
+			 else if (!isBullishPattern && macdCross === 'bullish') 
 				conflictingSignals.push('MACD bullish');
-			}
+			
 		}
 
 		// Check PSAR
 		if (trendIndicators?.psar?.position) {
 			const psarPosition = trendIndicators.psar.position;
-			if (isBullishPattern && psarPosition.includes('bearish')) {
+			if (isBullishPattern && psarPosition.includes('bearish')) 
 				conflictingSignals.push('PSAR bearish');
-			} else if (!isBullishPattern && psarPosition.includes('bullish')) {
+			 else if (!isBullishPattern && psarPosition.includes('bullish')) 
 				conflictingSignals.push('PSAR bullish');
-			}
+			
 		}
 
 		// Check RSI trend
 		if (momentumIndicators?.rsi?.trend) {
 			const rsiTrend = momentumIndicators.rsi.trend;
-			if (isBullishPattern && rsiTrend === 'declining') {
+			if (isBullishPattern && rsiTrend === 'declining') 
 				conflictingSignals.push('RSI weakening');
-			} else if (!isBullishPattern && rsiTrend === 'rising') {
+			 else if (!isBullishPattern && rsiTrend === 'rising') 
 				conflictingSignals.push('RSI strengthening');
-			}
+			
 		}
 
 		// Determine quality and warning
-		if (conflictingSignals.length === 0) {
+		if (conflictingSignals.length === 0) 
 			return { quality: 'strong' };
-		} else if (conflictingSignals.length === 1) {
+		 else if (conflictingSignals.length === 1) 
 			return {
 				quality: 'weakening',
 				warning: `momentum partially conflicts with ${pattern.bias} pattern (${conflictingSignals[0]})`
 			};
-		} else {
+		 else 
 			return {
 				quality: 'contradicting',
 				warning: `momentum conflicts with ${pattern.bias} pattern (${conflictingSignals.join(', ')})`
 			};
-		}
+		
 	}
 }
 

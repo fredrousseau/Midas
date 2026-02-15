@@ -83,7 +83,6 @@ export class DataProvider {
 		}
 	}
 
-
 	/**
 	 * Convert timeframe string to milliseconds
 	 * @private

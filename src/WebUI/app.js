@@ -1,3 +1,4 @@
+/* exported fetchCatalog, authenticatedFetch, mainChart, candlestickSeries, indicatorChart, indicatorSeries, seriesDisplayNames, appTimezone, isSyncingCharts */
 // Configuration
 const API_BASE = window.location.origin;
 
@@ -7,7 +8,7 @@ let candlestickSeries = null;
 let indicatorChart = null;
 let currentData = null;
 let indicatorSeries = new Map();
-let catalogData = null;
+let _catalogData = null;
 let indicatorDescriptions = new Map(); // Map indicator key to description
 let seriesDisplayNames = new Map(); // Map series key to display name for data panel
 let appTimezone = 'Europe/Paris'; // Default, will be loaded from API
@@ -411,7 +412,7 @@ function transformIndicatorToSeries(indicatorData, ohlcvData) {
 	}
 
 	// OLD FORMAT FALLBACK: { values: [...] }
-	const { values, components, bars } = indicatorData;
+	const { values, components: _components, bars: _bars } = indicatorData;
 	const dataSource = ohlcvData.data || ohlcvData.bars || [];
 	const allTimestamps = dataSource.map((item) => (item.timestamp + configuredOffset) / 1000);
 
@@ -986,11 +987,11 @@ else tryInitCharts();
 	let _webhookTimerInterval = null;
 
 	function showWebhookStatus(message, type = 'loading') {
-		if (type === 'loading') {
+		if (type === 'loading')
 			webhookStatus.innerHTML = `<span class="status-spinner"></span><span class="status-text">${message}</span>`;
-		} else {
+		else
 			webhookStatus.textContent = message;
-		}
+		
 		webhookStatus.className = `status ${type}`;
 		webhookStatus.style.display = type === 'loading' ? 'flex' : 'block';
 	}
@@ -1050,11 +1051,11 @@ else tryInitCharts();
 
 			if (text) {
 				const renderMarkdown = (md) => {
-					if (window.marked) {
+					if (window.marked)
 						webhookResult.innerHTML = window.marked.parse(md);
-					} else {
+					else
 						webhookResult.textContent = md;
-					}
+					
 				};
 
 				try {
@@ -1067,11 +1068,11 @@ else tryInitCharts();
 				webhookResult.textContent = '(Reponse vide)';
 			}
 
-			if (response.ok) {
+			if (response.ok)
 				showWebhookStatus(`Succes (${response.status})`, 'success');
-			} else {
+			else
 				showWebhookStatus(`Erreur HTTP ${response.status}`, 'error');
-			}
+			
 		} catch (err) {
 			webhookResult.textContent = err.message;
 			showWebhookStatus(`Echec de l'appel: ${err.message}`, 'error');

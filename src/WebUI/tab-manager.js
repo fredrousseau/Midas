@@ -23,22 +23,21 @@ document.addEventListener('DOMContentLoaded', () => {
     function switchTab(tabName) {
         // Update tab buttons
         tabButtons.forEach(btn => {
-            if (btn.dataset.tab === tabName) {
+            if (btn.dataset.tab === tabName) 
                 btn.classList.add('active');
-            } else {
+             else 
                 btn.classList.remove('active');
-            }
+            
         });
 
         // Update tab content
         Object.keys(tabContents).forEach(key => {
-            if (tabContents[key]) {
-                if (key === tabName) {
+            if (tabContents[key]) 
+                if (key === tabName) 
                     tabContents[key].classList.add('active');
-                } else {
+                 else 
                     tabContents[key].classList.remove('active');
-                }
-            }
+            
         });
 
         // Show/hide charts-only sidebar elements
@@ -61,9 +60,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Restore last active tab from localStorage or default to charts
     const savedTab = localStorage.getItem('activeTab');
-    if (savedTab && tabContents[savedTab]) {
+    if (savedTab && tabContents[savedTab]) 
         switchTab(savedTab);
-    } else {
+     else 
         switchTab('charts');
-    }
+    
 });

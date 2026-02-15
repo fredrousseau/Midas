@@ -45,10 +45,10 @@ export class CustomPSAR {
 		// Calculate new SAR
 		const newSar = this.sar + this.af * (this.ep - this.sar);
 
-		if (this.isUptrend) {
+		if (this.isUptrend) 
 			// In uptrend, SAR should be below price
 			// Check if trend reverses (price crosses below SAR)
-			if (low < newSar) {
+			{if (low < newSar) {
 				this.isUptrend = false;
 				this.sar = this.ep; // Switch SAR to previous extreme point
 				this.ep = low; // New extreme point is current low
@@ -58,19 +58,18 @@ export class CustomPSAR {
 				this.sar = newSar;
 
 				// Make sure SAR doesn't go above prior two lows
-				if (this.lowsHistory.length >= 3) {
+				if (this.lowsHistory.length >= 3) 
 					this.sar = Math.min(this.sar, this.lowsHistory[this.lowsHistory.length - 2], this.lowsHistory[this.lowsHistory.length - 3]);
-				} else if (this.lowsHistory.length >= 2) {
+				 else if (this.lowsHistory.length >= 2) 
 					this.sar = Math.min(this.sar, this.lowsHistory[this.lowsHistory.length - 2]);
-				}
 
 				// Update extreme point and acceleration factor
 				if (high > this.ep) {
 					this.ep = high;
 					this.af = Math.min(this.af + this.step, this.max);
 				}
-			}
-		} else {
+			}}
+		 else 
 			// In downtrend, SAR should be above price
 			// Check if trend reverses (price crosses above SAR)
 			if (high > newSar) {
@@ -83,11 +82,10 @@ export class CustomPSAR {
 				this.sar = newSar;
 
 				// Make sure SAR doesn't go below prior two highs
-				if (this.highsHistory.length >= 3) {
+				if (this.highsHistory.length >= 3) 
 					this.sar = Math.max(this.sar, this.highsHistory[this.highsHistory.length - 2], this.highsHistory[this.highsHistory.length - 3]);
-				} else if (this.highsHistory.length >= 2) {
+				 else if (this.highsHistory.length >= 2) 
 					this.sar = Math.max(this.sar, this.highsHistory[this.highsHistory.length - 2]);
-				}
 
 				// Update extreme point and acceleration factor
 				if (low < this.ep) {
@@ -95,7 +93,6 @@ export class CustomPSAR {
 					this.af = Math.min(this.af + this.step, this.max);
 				}
 			}
-		}
 
 		this.isStable = true;
 	}
@@ -105,9 +102,9 @@ export class CustomPSAR {
 	 * @returns {number|null} Current SAR value
 	 */
 	getResult() {
-		if (!this.isStable) {
+		if (!this.isStable) 
 			return null;
-		}
+		
 		return this.sar;
 	}
 

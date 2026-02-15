@@ -83,7 +83,7 @@ export class IchimokuCloud {
    * @private
    */
   _calculate() {
-    const len = this.highs.length;
+    const _len = this.highs.length;
 
     // Calculate Tenkan-sen (Conversion Line)
     const tenkan = this._calculateMidpoint(this.tenkanPeriod);

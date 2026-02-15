@@ -257,9 +257,8 @@ export class CacheManager {
 
 		// Get all timestamps in range
 		for (const [timestamp, bar] of segment.bars)
-			if (timestamp >= startTimestamp && timestamp <= endTimestamp) {
+			if (timestamp >= startTimestamp && timestamp <= endTimestamp) 
 				bars.push(bar);
-			}
 
 		// Sort by timestamp
 		bars.sort((a, b) => a.timestamp - b.timestamp);

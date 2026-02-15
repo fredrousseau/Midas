@@ -169,7 +169,7 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		const { query, market = 'all' } = options;
 
 		// If a search query is provided, use Yahoo Finance search
-		if (query) {
+		if (query) 
 			try {
 				const results = await this._yf.search(query);
 				return (results?.quotes || []).map(q => ({
@@ -185,7 +185,6 @@ export class YahooFinanceAdapter extends GenericAdapter {
 				this.logger.error(`YahooFinanceAdapter: search error: ${error.message}`);
 				return [];
 			}
-		}
 
 		// Default: return curated CAC40 + major indices list
 		const cac40 = [
