@@ -266,7 +266,7 @@ export class RegimeDetectionService {
 		const volatilityRatio = medianAtrRatio > 1e-12 ? currentAtrRatio / medianAtrRatio : 1.0;
 		const volatilityMultiplier = Math.max(
 			config.adaptive.volatility.minMultiplier,
-			Math.min(config.adaptive.volatility.maxMultiplier, 0.7 + volatilityRatio * 0.6)
+			Math.min(config.adaptive.volatility.maxMultiplier, 0.5 + volatilityRatio * 0.5)
 		);
 
 		// 3. Combined adjustment factor

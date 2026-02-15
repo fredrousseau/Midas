@@ -169,9 +169,12 @@ export class PatternDetector {
 	_detectFlag(bars, currentPrice, atr) {
 		const recent = bars.slice(-PATTERN_PERIODS.flagRecent);
 
-		// Dynamic pole search (8-15 bars)
-		for (let poleEnd = recent.length - 5; poleEnd >= PATTERN_PERIODS.poleMinLength; poleEnd--)
-			for (let poleStart = poleEnd - PATTERN_PERIODS.poleSearchStart; poleStart < poleEnd - PATTERN_PERIODS.poleSearchEnd; poleStart++) {
+		// Dynamic pole search: test all pole durations between poleMinBars and poleMaxBars
+		for (let poleEnd = recent.length - 5; poleEnd >= PATTERN_PERIODS.poleMinLength; poleEnd--) {
+			for (let poleLen = PATTERN_PERIODS.poleMinBars; poleLen <= PATTERN_PERIODS.poleMaxBars; poleLen++) {
+				const poleStart = poleEnd - poleLen;
+				if (poleStart < 0) continue;
+
 				const pole = recent.slice(poleStart, poleEnd);
 				const poleMove = pole[pole.length - 1].close - pole[0].close;
 				const poleRange = Math.abs(poleMove);
@@ -193,9 +196,9 @@ export class PatternDetector {
 				// Flag should be smaller than pole (< 50%)
 				if (flagRange > poleRange * 0.5) continue;
 
-				// Flag should consolidate, not continue trending
+				// Flag should consolidate, not retrace more than flagMaxRetrace of pole
 				const flagMove = flag[flag.length - 1].close - flag[0].close;
-				if (Math.abs(flagMove) > poleRange * 0.3) continue;
+				if (Math.abs(flagMove) > poleRange * PATTERN_PERIODS.flagMaxRetrace) continue;
 
 				// Base confidence + bonuses
 				let confidence = 0.70;
@@ -218,6 +221,7 @@ export class PatternDetector {
 					status: 'forming'
 				};
 			}
+		}
 
 		return null;
 	}
@@ -236,6 +240,15 @@ export class PatternDetector {
 		const highSlope = highs[highs.length - 1].price - highs[0].price;
 		const lowSlope = lows[lows.length - 1].price - lows[0].price;
 
+		// Normalize slopes per bar to make them comparable to ATR
+		const highBarSpan = highs[highs.length - 1].index - highs[0].index || 1;
+		const lowBarSpan = lows[lows.length - 1].index - lows[0].index || 1;
+		const highSlopePerBar = highSlope / highBarSpan;
+		const lowSlopePerBar = lowSlope / lowBarSpan;
+
+		const flatThreshold = atr * PATTERN_ATR_MULTIPLIERS.triangleFlatSlope;
+		const trendThreshold = atr * PATTERN_ATR_MULTIPLIERS.triangleTrendSlope;
+
 		// Symmetrical triangle: converging lines
 		if (highSlope < 0 && lowSlope > 0)
 			return {
@@ -250,7 +263,7 @@ export class PatternDetector {
 			};
 
 		// Ascending triangle: flat top + rising bottom
-		if (Math.abs(highSlope) < atr && lowSlope > atr)
+		if (Math.abs(highSlopePerBar) < flatThreshold && lowSlopePerBar > trendThreshold)
 			return {
 				pattern: 'ascending triangle',
 				type: 'continuation',
@@ -264,7 +277,7 @@ export class PatternDetector {
 			};
 
 		// Descending triangle: falling top + flat bottom
-		if (highSlope < -atr && Math.abs(lowSlope) < atr)
+		if (highSlopePerBar < -trendThreshold && Math.abs(lowSlopePerBar) < flatThreshold)
 			return {
 				pattern: 'descending triangle',
 				type: 'continuation',

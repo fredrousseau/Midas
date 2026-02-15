@@ -45,11 +45,12 @@ export const PATTERN_PERIODS = {
 
 	// Flag pattern parameters
 	flagRecent: 30,        // Recent bars for flag pattern detection
-	poleMinLength: 15,     // Minimum pole length for flag
-	poleSearchStart: 15,   // Where to start looking for pole
-	poleSearchEnd: 8,      // Where to end pole search
+	poleMinLength: 15,     // Minimum index for pole end (ensures enough bars for flag)
+	poleMinBars: 8,        // Minimum pole duration in bars
+	poleMaxBars: 15,       // Maximum pole duration in bars
 	flagMinLength: 5,      // Minimum flag duration
 	flagMaxLength: 15,     // Maximum flag duration
+	flagMaxRetrace: 0.15,  // Flag must not retrace more than 15% of pole range
 
 	// Triangle/Wedge/H&S swing detection
 	triangleSwingBars: 60,      // Bars for triangle swing detection
@@ -63,8 +64,10 @@ export const PATTERN_PERIODS = {
  * Used to determine significance of swings in pattern detection
  */
 export const PATTERN_ATR_MULTIPLIERS = {
-	normalSwing: 1.3,      // Standard swing detection
-	significantSwing: 1.5  // Significant pattern swings (H&S)
+	normalSwing: 1.3,          // Standard swing detection
+	significantSwing: 1.5,     // Significant pattern swings (H&S)
+	triangleFlatSlope: 0.05,   // Max slope per bar (as ATR fraction) to qualify as "flat" trendline
+	triangleTrendSlope: 0.10   // Min slope per bar (as ATR fraction) to qualify as "trending" trendline
 };
 
 /**
