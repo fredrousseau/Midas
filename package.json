@@ -12,10 +12,10 @@
     "#mcp/*": "./src/Mcp/*"
   },
   "engines": {
-    "node": "<=20"
+    "node": ">=22"
   },
   "scripts": {
-    "prestart": "node -e \"const v = process.version.split('.')[0].slice(1); if (v !== '20') { console.error('Error: Node.js v20.x is required, but you are running ' + process.version); process.exit(1); }\"",
+    "prestart": "node -e \"const v = parseInt(process.version.split('.')[0].slice(1)); if (v < 22) { console.error('Error: Node.js v22.x or higher is required, but you are running ' + process.version); process.exit(1); }\"",
     "start": "npm run prestart && node src/server.js",
     "debug": "npm run prestart && DEBUG=true node src/server.js"
   },
@@ -32,6 +32,7 @@
     "trading-signals": "^7.1.0",
     "winston": "^3.18.3",
     "winston-daily-rotate-file": "^5.0.0",
+    "yahoo-finance2": "^3.13.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
