@@ -1027,15 +1027,19 @@ else tryInitCharts();
 			const text = await response.text();
 
 			if (text) {
+				const renderMarkdown = (md) => {
+					if (window.marked) {
+						webhookResult.innerHTML = window.marked.parse(md);
+					} else {
+						webhookResult.textContent = md;
+					}
+				};
+
 				try {
 					const json = JSON.parse(text);
-					webhookResult.textContent = JSON.stringify(json, null, 2);
+					renderMarkdown(JSON.stringify(json, null, 2));
 				} catch {
-					if (text.trim().startsWith('<')) {
-						webhookResult.innerHTML = text;
-					} else {
-						webhookResult.textContent = text;
-					}
+					renderMarkdown(text);
 				}
 			} else {
 				webhookResult.textContent = '(Reponse vide)';

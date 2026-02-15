@@ -664,12 +664,90 @@
             border-radius: 8px;
             padding: 20px;
             color: #e0e0e0;
-            font-size: 12px;
-            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             overflow: auto;
-            white-space: pre-wrap;
             word-break: break-word;
             margin: 0;
+            line-height: 1.6;
+        }
+
+        .webhook-result h1, .webhook-result h2, .webhook-result h3,
+        .webhook-result h4, .webhook-result h5, .webhook-result h6 {
+            color: #fff;
+            margin: 1em 0 0.4em;
+            line-height: 1.3;
+        }
+        .webhook-result h1 { font-size: 1.5em; }
+        .webhook-result h2 { font-size: 1.3em; }
+        .webhook-result h3 { font-size: 1.1em; }
+
+        .webhook-result p { margin: 0.5em 0; }
+
+        .webhook-result ul, .webhook-result ol {
+            padding-left: 1.5em;
+            margin: 0.5em 0;
+        }
+
+        .webhook-result li { margin: 0.2em 0; }
+
+        .webhook-result code {
+            background: #2a2a2a;
+            border: 1px solid #3a3a3a;
+            border-radius: 4px;
+            padding: 0.1em 0.4em;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #e0b060;
+        }
+
+        .webhook-result pre {
+            background: #111;
+            border: 1px solid #2a2a2a;
+            border-radius: 6px;
+            padding: 14px;
+            overflow: auto;
+            margin: 0.8em 0;
+        }
+
+        .webhook-result pre code {
+            background: none;
+            border: none;
+            padding: 0;
+            color: #e0e0e0;
+            font-size: 12px;
+        }
+
+        .webhook-result blockquote {
+            border-left: 3px solid #444;
+            margin: 0.5em 0;
+            padding: 0.2em 1em;
+            color: #aaa;
+        }
+
+        .webhook-result hr {
+            border: none;
+            border-top: 1px solid #333;
+            margin: 1em 0;
+        }
+
+        .webhook-result a { color: #4a9eff; }
+
+        .webhook-result table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 0.8em 0;
+        }
+
+        .webhook-result th, .webhook-result td {
+            border: 1px solid #333;
+            padding: 6px 12px;
+            text-align: left;
+        }
+
+        .webhook-result th {
+            background: #222;
+            color: #fff;
         }
 
         .charts-container {
@@ -976,7 +1054,7 @@
                         <span class="webhook-result-title">Reponse</span>
                         <span class="webhook-result-url" id="webhookResultUrl"></span>
                     </div>
-                    <pre class="webhook-result" id="webhookResult"><span style="color: #999;">Aucun appel effectue</span></pre>
+                    <div class="webhook-result" id="webhookResult"><span style="color: #999;">Aucun appel effectue</span></div>
                 </div>
             </div>
 
@@ -995,6 +1073,7 @@
     </div>
 
     <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" onload="window.lightweightChartsLoaded = true;"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <script type="module" src="auth-client.js"></script>
     <script src="indicators-ui.js"></script>
     <script src="data-panel.js"></script>
