@@ -321,7 +321,7 @@ GET /api/v1/regime?symbol=BTCUSDT&timeframe=1h&count=200
 ### Analyse Multi-Timeframe
 
 ```http
-GET /api/v1/context/enriched?symbol=BTCUSDT&timeframes=1d,4h,1h&count=200
+GET /api/v1/context?symbol=BTCUSDT&timeframes=1d,4h,1h&count=200
 ```
 
 **Response:** Analyse complète avec statistical_context, regimes par timeframe, alignment_score, recommandation.

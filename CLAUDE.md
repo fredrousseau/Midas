@@ -47,12 +47,12 @@ LAYER 5: API Exposure (REST endpoints + WebUI)
 
 ### Key Services Flow
 
-1. `MarketContextService.generateContext()` / `.generateLLMContext()` - Entry point
+1. `MarketContextService.generateContext()` - Entry point
 2. `StatisticalContextService.generateFullContext()` - Gathers multi-timeframe statistical data
 3. 6 Enrichers execute in parallel: Momentum, Volatility, Volume, MovingAverages, PriceAction, Patterns
 4. `RegimeDetectionService` - Identifies market regime (9 types: trending/ranging/breakout x bull/bear/neutral)
 5. Alignment analysis - Weighted multi-timeframe scoring
-6. Returns complete context (raw technical data or LLM-optimized format)
+6. Returns complete context (raw technical data)
 
 ### Critical Configuration
 
@@ -105,8 +105,7 @@ Frontend must extract `errorData.error.message` (not `errorData.error` which is 
 ## API Endpoints
 
 **Context (main analysis):**
-- `GET /api/v1/context/enriched?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Full multi-timeframe context
-- `GET /api/v1/context/llm?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - LLM-optimized context
+- `GET /api/v1/context?symbol=BTCUSDT&long=1d&medium=4h&short=1h` - Full multi-timeframe context
 
 **Market Data:**
 - `GET /api/v1/market-data/price/:symbol` - Current price
@@ -168,7 +167,7 @@ ESLint v9 with flat config (`eslint.config.js`). Key rules: `no-undef` (error), 
 ## Common Pitfalls
 
 1. **Date vs Timestamp** - Binance API expects numeric timestamps. Always use `date.getTime()`, never pass Date objects to `loadOHLCV`.
-2. **Method names** - `loadOHLCV` not `getOHLCV`. `generateContext` / `generateLLMContext` not `analyze`.
+2. **Method names** - `loadOHLCV` not `getOHLCV`. `generateContext` not `analyze`.
 3. **Error display** - Extract `errorData.error.message`, not `errorData.error` (shows "[object Object]").
 4. **Redis** - Without it, every analysis hits Binance API directly. Check with `redis-cli ping`.
 5. **Config sync** - Bar counts and lookback periods must be coordinated. OHLCV >= INDICATOR + 50 margin.
