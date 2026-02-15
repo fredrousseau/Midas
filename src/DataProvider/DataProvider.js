@@ -225,26 +225,26 @@ export class DataProvider {
 	 * @param {number} [options.count=200] - Number of bars to fetch
 	 * @param {number} [options.from] - Start timestamp
 	 * @param {number} [options.to] - End timestamp
-	 * @param {Date|string|number} [options.analysisDate] - Analysis date for historical analysis (bars will end at this date)
+	 * @param {Date|string|number} [options.referenceDate] - Analysis date for historical analysis (bars will end at this date)
 	 * @param {boolean} [options.useCache=true] - Use cached data if available
 	 * @param {boolean} [options.detectGaps=true] - Detect gaps in data
 	 * @returns {Promise<Object>} OHLCV data with metadata
 	 * @throws {Error} If symbol is missing or count is out of range
 	 */
 	async loadOHLCV(options = {}) {
-		const { symbol, timeframe = '1h', count = 200, from, to, analysisDate, useCache = true, detectGaps = true } = options;
+		const { symbol, timeframe = '1h', count = 200, from, to, referenceDate, useCache = true, detectGaps = true } = options;
 
 		if (!symbol) throw new Error('Symbol is required');
 		if (count < 1) throw new Error('Count must be at least 1');
 
-		// Parse analysisDate to timestamp
+		// Parse referenceDate to timestamp
 		let analysisTimestamp = null;
-		if (analysisDate) {
-			if (analysisDate instanceof Date) analysisTimestamp = analysisDate.getTime();
-			else if (typeof analysisDate === 'string') analysisTimestamp = new Date(analysisDate).getTime();
-			else if (typeof analysisDate === 'number') analysisTimestamp = analysisDate;
+		if (referenceDate) {
+			if (referenceDate instanceof Date) analysisTimestamp = referenceDate.getTime();
+			else if (typeof referenceDate === 'string') analysisTimestamp = new Date(referenceDate).getTime();
+			else if (typeof referenceDate === 'number') analysisTimestamp = referenceDate;
 
-			if (isNaN(analysisTimestamp)) throw new Error(`Invalid analysisDate: ${analysisDate}`);
+			if (isNaN(analysisTimestamp)) throw new Error(`Invalid referenceDate: ${referenceDate}`);
 		}
 
 		const startTime = Date.now();
@@ -260,7 +260,10 @@ export class DataProvider {
 
 		// Try to get from CacheManager (Redis)
 		if (useCache && this.cacheManager && this._isConnected) {
-			const cacheResult = await this.cacheManager.get(symbol, timeframe, count, analysisTimestamp);
+			// When referenceDate is provided, adjust cache endTimestamp to only include fully closed bars
+			// A bar with open time T is closed at T + timeframeDuration, so last valid open time = referenceDate - duration
+			const cacheEndTimestamp = analysisTimestamp ? analysisTimestamp - timeframeToMs(timeframe) : analysisTimestamp;
+			const cacheResult = await this.cacheManager.get(symbol, timeframe, count, cacheEndTimestamp);
 
 			if (cacheResult.coverage === 'full') {
 				// Full cache hit!
@@ -274,7 +277,7 @@ export class DataProvider {
 					bars: cacheResult.bars,
 					firstTimestamp: cacheResult.bars.at(0)?.timestamp ?? null,
 					lastTimestamp: cacheResult.bars.at(-1)?.timestamp ?? null,
-					analysisDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
+					referenceDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
 					gaps: [],
 					gapCount: 0,
 					fromCache: true,
@@ -290,8 +293,12 @@ export class DataProvider {
 		}
 
 		try {
-			// If analysisDate is provided, use it as endTime (to) for Binance API
+			// If referenceDate is provided, use it as endTime (to) for Binance API
 			const endTime = analysisTimestamp || to;
+
+			// Request extra bars when referenceDate is set, because the filter below
+			// may discard the last (still-open) bar, leaving us one bar short
+			const fetchCount = analysisTimestamp ? count + 1 : count;
 
 			// BATCH LOADING: Check if count exceeds the configured limit per request
 			// Use the smaller of adapter's hard limit and configured maxDataPoints
@@ -299,25 +306,28 @@ export class DataProvider {
 			const batchLimit = Math.min(adapterLimit, this.maxDataPoints);
 			let rawData;
 
-			if (count > batchLimit) {
+			if (fetchCount > batchLimit) {
 				// Need to fetch in batches
-				this.logger.info(`Count ${count} exceeds batch limit ${batchLimit}, fetching in batches`);
-				rawData = await this._fetchInBatches({ symbol, timeframe, count, from, to: endTime, adapterLimit: batchLimit });
+				this.logger.info(`Count ${fetchCount} exceeds batch limit ${batchLimit}, fetching in batches`);
+				rawData = await this._fetchInBatches({ symbol, timeframe, count: fetchCount, from, to: endTime, adapterLimit: batchLimit });
 			} else {
 				// Single request
-				rawData = await this.dataAdapter.fetchOHLC({ symbol, timeframe, count, from, to: endTime });
+				rawData = await this.dataAdapter.fetchOHLC({ symbol, timeframe, count: fetchCount, from, to: endTime });
 			}
 
 			this._validateOHLCVData(rawData);
 			let cleanedData = this._cleanOHLCVData(rawData);
 
-			// Filter by analysisDate if provided
+			// Filter by referenceDate if provided
+			// Use close time (open + timeframe duration) to ensure only fully closed bars are included
+			// bar.timestamp is the open time; a bar is complete when open + duration <= referenceDate
 			if (analysisTimestamp) {
-				cleanedData = cleanedData.filter((bar) => bar.timestamp <= analysisTimestamp);
+				const tfMs = timeframeToMs(timeframe);
+				cleanedData = cleanedData.filter((bar) => bar.timestamp + tfMs <= analysisTimestamp);
 
 				// If we don't have enough bars, throw an error
 				if (cleanedData.length < count)
-					throw new Error(`Insufficient historical data: only ${cleanedData.length} bars available before ${new Date(analysisTimestamp).toISOString()}, requested ${count}`);
+					throw new Error(`Insufficient historical data: Symbol ${symbol} for timeframe ${timeframe} only ${cleanedData.length} bars available before ${new Date(analysisTimestamp).toISOString()} requested ${count}`);
 
 				// Take only the last 'count' bars
 				cleanedData = cleanedData.slice(-count);
@@ -334,7 +344,7 @@ export class DataProvider {
 				bars: cleanedData, // Keep raw bars for internal use
 				firstTimestamp: cleanedData.at(0)?.timestamp ?? null,
 				lastTimestamp: cleanedData.at(-1)?.timestamp ?? null,
-				analysisDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
+				referenceDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
 				gaps,
 				gapCount: gaps.length,
 				fromCache: false,
