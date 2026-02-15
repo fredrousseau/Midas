@@ -983,13 +983,34 @@ else tryInitCharts();
 		localStorage.setItem('webhookUrl', webhookUrlInput.value.trim());
 	});
 
+	let _webhookTimerInterval = null;
+
 	function showWebhookStatus(message, type = 'loading') {
-		webhookStatus.textContent = message;
+		if (type === 'loading') {
+			webhookStatus.innerHTML = `<span class="status-spinner"></span><span class="status-text">${message}</span>`;
+		} else {
+			webhookStatus.textContent = message;
+		}
 		webhookStatus.className = `status ${type}`;
-		webhookStatus.style.display = 'block';
+		webhookStatus.style.display = type === 'loading' ? 'flex' : 'block';
+	}
+
+	function startWebhookTimer() {
+		const start = Date.now();
+		_webhookTimerInterval = setInterval(() => {
+			const elapsed = ((Date.now() - start) / 1000).toFixed(1);
+			const textEl = webhookStatus.querySelector('.status-text');
+			if (textEl) textEl.textContent = `Appel en cours... ${elapsed}s`;
+		}, 100);
+	}
+
+	function stopWebhookTimer() {
+		clearInterval(_webhookTimerInterval);
+		_webhookTimerInterval = null;
 	}
 
 	function hideWebhookStatus() {
+		stopWebhookTimer();
 		webhookStatus.style.display = 'none';
 	}
 
@@ -1019,7 +1040,8 @@ else tryInitCharts();
 		const fullUrl = `${baseUrl}${separator}${params.toString()}`;
 
 		webhookResultUrl.textContent = fullUrl;
-		showWebhookStatus('Appel du webhook en cours...', 'loading');
+		showWebhookStatus('Appel en cours... 0.0s', 'loading');
+		startWebhookTimer();
 		webhookCallBtn.disabled = true;
 
 		try {
@@ -1054,6 +1076,7 @@ else tryInitCharts();
 			webhookResult.textContent = err.message;
 			showWebhookStatus(`Echec de l'appel: ${err.message}`, 'error');
 		} finally {
+			stopWebhookTimer();
 			webhookCallBtn.disabled = false;
 			setTimeout(hideWebhookStatus, 5000);
 		}

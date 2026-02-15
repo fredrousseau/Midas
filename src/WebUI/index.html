@@ -819,6 +819,24 @@
         .status.loading {
             background: #01579b;
             color: #81d4fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .status-spinner {
+            width: 14px;
+            height: 14px;
+            border: 2px solid rgba(129, 212, 250, 0.3);
+            border-top-color: #81d4fa;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
         }
 
         .backtesting-info {
