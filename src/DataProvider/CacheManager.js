@@ -22,7 +22,7 @@ export class CacheManager {
 	constructor(options = {}) {
 		this.logger = options.logger;
 		this.maxEntriesPerKey = options.maxEntriesPerKey || 5000;
-		this.ttl = options.ttl || 300000; // 5 minutes
+		this.ttl = options.ttl ?? 300000; // 5 minutes (0 = no expiry)
 		this.redisAdapter = options.redisAdapter;
 
 		if (!this.redisAdapter) throw new Error('CacheManager requires redisAdapter - cache is now Redis-only');
@@ -323,7 +323,7 @@ export class CacheManager {
 			const timeSinceLastActivity = Date.now() - lastActivity;
 			const ttlMs = this.ttl;
 
-			if (timeSinceLastActivity > ttlMs) {
+			if (ttlMs > 0 && timeSinceLastActivity > ttlMs) {
 				// Stats are obsolete (older than TTL) - cache segments have expired
 				this.logger?.warn(`Cache statistics are obsolete (${Math.round(timeSinceLastActivity / 1000)}s old, TTL=${Math.round(ttlMs / 1000)}s) - resetting to zero`);
 				// Keep stats at initial values (all zeros)
@@ -436,7 +436,7 @@ export class CacheManager {
 			},
 			config: {
 				maxEntriesPerKey: this.maxEntriesPerKey,
-				ttl: `${this.ttl / 1000}s (${this.ttl / 60000}min)`,
+				ttl: this.ttl === 0 ? 'infinite (no expiry)' : `${this.ttl / 1000}s (${this.ttl / 60000}min)`,
 				storage: 'Redis',
 				ttlManagement: 'Redis native TTL',
 			},

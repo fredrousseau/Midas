@@ -43,7 +43,7 @@ export class DataProvider {
 		});
 
 		// CacheManager with Redis-only storage
-		const cacheTTL = (parameters.redisConfig.ttl || 300) * 1000; // Convert seconds to ms
+		const cacheTTL = (parameters.redisConfig.ttl ?? 300) * 1000; // Convert seconds to ms (0 = no expiry)
 		this.cacheManager = new CacheManager({
 			logger: this.logger,
 			maxEntriesPerKey: parameters.redisConfig.maxBars || 10000,
