@@ -3,6 +3,7 @@
  */
 
 import { asyncHandler, parseTradingParams } from './Utils/helpers.js';
+import { BinanceAdapter } from './DataProvider/BinanceAdapter.js';
 import rateLimit from 'express-rate-limit';
 
 // Helper to create rate limiters with consistent logging
@@ -329,66 +330,56 @@ export function registerRoutes(parameters) {
 	// ========== Channel : API / Type : STATISTICAL CONTEXT ==========
 
 	app.get(
-		'/api/v1/context/enriched',
+		'/api/v1/context',
 		asyncHandler(async (req) => {
 			const { symbol, long, medium, short, referenceDate } = req.query;
-			logger.info(`GET /api/v1/context/enriched - Unified enriched context${referenceDate ? ` at ${referenceDate}` : ''}`);
+			logger.info(`GET /api/v1/context - Multi-timeframe context${referenceDate ? ` at ${referenceDate}` : ''}`);
 
-			if (!symbol) {
-				const error = new Error('symbol is required');
-				error.statusCode = 400;
-				throw error;
+			// Validate required parameters
+			const errors = [];
+
+			if (!symbol)
+				errors.push('symbol is required (e.g. BTCUSDT)');
+			else if (typeof symbol !== 'string' || !/^[A-Z0-9]+$/.test(symbol))
+				errors.push(`symbol '${symbol}' is invalid — must be uppercase alphanumeric (e.g. BTCUSDT)`);
+
+			// Validate timeframes
+			const validTimeframes = BinanceAdapter.VALID_TIMEFRAMES;
+			const timeframesObj = {};
+
+			if (!long && !medium && !short) {
+				errors.push('At least one timeframe (long, medium, or short) is required. Example: ?long=1w&medium=1d&short=1h');
+			} else {
+				if (long)
+					if (!validTimeframes.includes(long))
+						errors.push(`long '${long}' is not a valid timeframe. Valid: ${validTimeframes.join(', ')}`);
+					else
+						timeframesObj.long = long;
+
+				if (medium)
+					if (!validTimeframes.includes(medium))
+						errors.push(`medium '${medium}' is not a valid timeframe. Valid: ${validTimeframes.join(', ')}`);
+					else
+						timeframesObj.medium = medium;
+
+				if (short)
+					if (!validTimeframes.includes(short))
+						errors.push(`short '${short}' is not a valid timeframe. Valid: ${validTimeframes.join(', ')}`);
+					else
+						timeframesObj.short = short;
 			}
 
-			// Build timeframes object from query parameters
-			const timeframesObj = {};
-			if (long) timeframesObj.long = long;
-			if (medium) timeframesObj.medium = medium;
-			if (short) timeframesObj.short = short;
+			// Validate referenceDate format if provided
+			if (referenceDate && isNaN(Date.parse(referenceDate)))
+				errors.push(`referenceDate '${referenceDate}' is not a valid date. Expected format: YYYY-MM-DD or ISO 8601`);
 
-			// Validate at least one timeframe is provided
-			if (Object.keys(timeframesObj).length === 0) {
-				const error = new Error('At least one timeframe (long, medium, or short) is required. Example: ?long=1w&medium=1d&short=1h');
+			if (errors.length > 0) {
+				const error = new Error(errors.join('; '));
 				error.statusCode = 400;
 				throw error;
 			}
 
 			return await marketContextService.generateContext({
-				symbol,
-				timeframes: timeframesObj,
-				referenceDate,
-			});
-		})
-	);
-
-	// LLM-optimized context endpoint
-	// Returns clean, interpreted data suitable for LLM decision-making
-	app.get(
-		'/api/v1/context/llm',
-		asyncHandler(async (req) => {
-			const { symbol, long, medium, short, referenceDate } = req.query;
-			logger.info(`GET /api/v1/context/llm - LLM-optimized context${referenceDate ? ` at ${referenceDate}` : ''}`);
-
-			if (!symbol) {
-				const error = new Error('symbol is required');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			// Build timeframes object from query parameters
-			const timeframesObj = {};
-			if (long) timeframesObj.long = long;
-			if (medium) timeframesObj.medium = medium;
-			if (short) timeframesObj.short = short;
-
-			// Validate at least one timeframe is provided
-			if (Object.keys(timeframesObj).length === 0) {
-				const error = new Error('At least one timeframe (long, medium, or short) is required. Example: ?long=1w&medium=1d&short=1h');
-				error.statusCode = 400;
-				throw error;
-			}
-
-			return await marketContextService.generateLLMContext({
 				symbol,
 				timeframes: timeframesObj,
 				referenceDate,
