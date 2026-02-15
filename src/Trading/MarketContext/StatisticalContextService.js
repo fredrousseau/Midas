@@ -44,9 +44,9 @@ export class StatisticalContextService {
 	 * @param {string} params.symbol - Trading symbol
 	 * @param {Object} params.timeframes - Object mapping temporality to timeframe
 	 *                                     Example: { long: '1w', medium: '1d', short: '1h' }
-	 * @param {string} params.analysisDate - Optional date for historical analysis
+	 * @param {string} params.referenceDate - Optional date for historical analysis
 	 */
-	async generateFullContext({ symbol, timeframes, analysisDate }) {
+	async generateFullContext({ symbol, timeframes, referenceDate }) {
 		const startTime = Date.now();
 
 		// Validate and parse timeframes configuration
@@ -64,7 +64,7 @@ export class StatisticalContextService {
 		for (const tf of sortedTFs) {
 			// Strict mode: any error on a timeframe should fail the entire request
 			// This ensures API returns proper error status when timeframe is invalid
-			const tfContext = await this._generateTimeframeContext(symbol, tf, higherTFData, analysisDate);
+			const tfContext = await this._generateTimeframeContext(symbol, tf, higherTFData, referenceDate);
 			contexts[tf] = tfContext;
 			higherTFData[tf] = {
 				timeframe: tf,
@@ -109,7 +109,7 @@ export class StatisticalContextService {
 			metadata: {
 				symbol,
 				timestamp: new Date().toISOString(),
-				analysisDate: analysisDate || null,
+				referenceDate: referenceDate || null,
 				analysis_window: 'adaptive (timeframe-based)',
 				bars_per_timeframe: barsSummary,
 				generation_time_ms: Date.now() - startTime,
@@ -133,14 +133,14 @@ export class StatisticalContextService {
 	 * Generate context for a single timeframe
 	 * Uses adaptive bar count based on timeframe
 	 */
-	async _generateTimeframeContext(symbol, timeframe, higherTFData, analysisDate) {
+	async _generateTimeframeContext(symbol, timeframe, higherTFData, referenceDate) {
 		const barCount = this._getAdaptiveOHLCVCount(timeframe);
 
 		const ohlcvData = await this.dataProvider.loadOHLCV({
 			symbol,
 			timeframe,
 			count: barCount,
-			analysisDate,
+			referenceDate,
 			useCache: true,
 			detectGaps: false,
 		});
@@ -148,7 +148,7 @@ export class StatisticalContextService {
 		if (!ohlcvData || !ohlcvData.bars || ohlcvData.bars.length === 0) throw new Error(`No OHLCV data available for ${symbol} on ${timeframe}`);
 
 		const currentPrice = ohlcvData.bars[ohlcvData.bars.length - 1].close;
-		const regimeData = await this.regimeDetectionService.detectRegime({ symbol, timeframe, count: barCount, analysisDate });
+		const regimeData = await this.regimeDetectionService.detectRegime({ symbol, timeframe, count: barCount, referenceDate });
 		const contextDepth = this._getContextDepth(timeframe);
 
 		const enriched = {
@@ -161,7 +161,7 @@ export class StatisticalContextService {
 		};
 
 		// Base enrichment for all levels
-		enriched.moving_averages = await this.maEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, analysisDate });
+		enriched.moving_averages = await this.maEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, referenceDate });
 		enriched.trend_indicators = { adx: this._extractADXInfo(regimeData) };
 
 		// Light level: basic price action only
@@ -173,7 +173,7 @@ export class StatisticalContextService {
 			const htf = this._getHigherTimeframe(timeframe, Object.keys(higherTFData));
 			const htfData = htf ? higherTFData[htf] : null;
 
-			enriched.momentum_indicators = await this.momentumEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, higherTimeframeData: htfData, analysisDate });
+			enriched.momentum_indicators = await this.momentumEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, higherTimeframeData: htfData, referenceDate });
 			enriched.volatility_indicators = await this.volatilityEnricher.enrich({
 				ohlcvData,
 				indicatorService: this.indicatorService,
@@ -181,10 +181,10 @@ export class StatisticalContextService {
 				timeframe,
 				currentPrice,
 				higherTimeframeData: htfData,
-				analysisDate,
+				referenceDate,
 			});
-			enriched.volume_indicators = await this.volumeEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, analysisDate });
-			enriched.trend_indicators.psar = await this._getPSAR(symbol, timeframe, analysisDate);
+			enriched.volume_indicators = await this.volumeEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, referenceDate });
+			enriched.trend_indicators.psar = await this._getPSAR(symbol, timeframe, referenceDate);
 			enriched.price_action = this.priceActionEnricher.enrich({ ohlcvData, currentPrice });
 			enriched.support_resistance = this._identifySupportResistance(ohlcvData, enriched);
 
@@ -356,21 +356,21 @@ export class StatisticalContextService {
 		return { value: adx, interpretation, di_plus: direction?.diPlus, di_minus: direction?.diMinus, trend: direction?.trend };
 	}
 
-	async _getPSAR(symbol, timeframe, analysisDate) {
+	async _getPSAR(symbol, timeframe, referenceDate) {
 		try {
 			const series = await this.indicatorService.getIndicatorTimeSeries({
 				symbol,
 				indicator: 'psar',
 				timeframe,
 				bars: getBarCount('indicator', timeframe),
-				analysisDate,
+				referenceDate,
 				config: { step: 0.02, max: 0.2 },
 			});
 			if (!series || !series.data || series.data.length === 0) return null;
 			const current = series.data[series.data.length - 1];
 			const psarValue = current.value;
 			if (psarValue === null || psarValue === undefined || isNaN(psarValue)) return null;
-			const bars = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: 2, analysisDate });
+			const bars = await this.dataProvider.loadOHLCV({ symbol, timeframe, count: 2, referenceDate });
 			if (!bars?.bars || bars.bars.length === 0) return null;
 			const currentPrice = bars.bars[bars.bars.length - 1].close;
 			const position = psarValue < currentPrice ? 'below price (bullish)' : 'above price (bearish)';

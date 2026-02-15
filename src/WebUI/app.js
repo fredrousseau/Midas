@@ -301,9 +301,9 @@ async function fetchCatalog() {
 	return result.data || result;
 }
 
-async function fetchOHLCV(symbol, timeframe, bars, analysisDate = null) {
+async function fetchOHLCV(symbol, timeframe, bars, referenceDate = null) {
 	let url = `${API_BASE}/api/v1/market-data/ohlcv?symbol=${symbol}&timeframe=${timeframe}&count=${bars}`;
-	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
+	if (referenceDate) url += `&referenceDate=${encodeURIComponent(referenceDate)}`;
 
 	const response = await authenticatedFetch(url);
 	if (!response.ok) {
@@ -315,10 +315,10 @@ async function fetchOHLCV(symbol, timeframe, bars, analysisDate = null) {
 	return result.data || result;
 }
 
-async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}, analysisDate = null) {
+async function fetchIndicator(symbol, indicator, timeframe, bars, config = {}, referenceDate = null) {
 	const configParam = encodeURIComponent(JSON.stringify(config));
 	let url = `${API_BASE}/api/v1/indicators/${indicator}/series?symbol=${symbol}&timeframe=${timeframe}&bars=${bars}&config=${configParam}`;
-	if (analysisDate) url += `&analysisDate=${encodeURIComponent(analysisDate)}`;
+	if (referenceDate) url += `&referenceDate=${encodeURIComponent(referenceDate)}`;
 
 	const response = await authenticatedFetch(url);
 	if (!response.ok) {
@@ -700,7 +700,7 @@ const OSCILLATOR_INDICATORS = [
 	'tds',
 ];
 
-async function addIndicator(name, symbol, timeframe, bars, analysisDate = null) {
+async function addIndicator(name, symbol, timeframe, bars, referenceDate = null) {
 	if (!currentData) throw new Error('OHLCV data not loaded');
 
 	const config = INDICATOR_CONFIGS[name] || {};
@@ -708,7 +708,7 @@ async function addIndicator(name, symbol, timeframe, bars, analysisDate = null) 
 	const isOscillator = OSCILLATOR_INDICATORS.includes(name);
 
 	try {
-		const data = await fetchIndicator(symbol, name, timeframe, bars, config, analysisDate);
+		const data = await fetchIndicator(symbol, name, timeframe, bars, config, referenceDate);
 		const series = transformIndicatorToSeries(data, currentData);
 
 		if (isOverlay) addOverlayIndicator(name, series);
@@ -732,11 +732,11 @@ async function loadData() {
 	const symbol = document.getElementById('symbol').value.trim().toUpperCase();
 	const timeframe = document.getElementById('timeframe').value;
 	const bars = parseInt(document.getElementById('bars').value);
-	const analysisDateInput = document.getElementById('analysisDate').value;
+	const referenceDateInput = document.getElementById('referenceDate').value;
 
 	// Convert datetime-local to ISO string if provided
-	let analysisDate = null;
-	if (analysisDateInput) analysisDate = new Date(analysisDateInput).toISOString();
+	let referenceDate = null;
+	if (referenceDateInput) referenceDate = new Date(referenceDateInput).toISOString();
 
 	if (!symbol) {
 		showStatus('Veuillez entrer un symbole', 'error');
@@ -747,31 +747,31 @@ async function loadData() {
 	const loadBtn = document.getElementById('loadBtn');
 	loadBtn.disabled = true;
 
-	const statusMessage = analysisDate ? `Chargement des données OHLCV (backtesting au ${new Date(analysisDate).toLocaleString()})...` : 'Chargement des données OHLCV...';
+	const statusMessage = referenceDate ? `Chargement des données OHLCV (backtesting au ${new Date(referenceDate).toLocaleString()})...` : 'Chargement des données OHLCV...';
 	showStatus(statusMessage, 'loading');
 
 	try {
 		// Load OHLCV data
-		const ohlcvData = await fetchOHLCV(symbol, timeframe, bars, analysisDate);
+		const ohlcvData = await fetchOHLCV(symbol, timeframe, bars, referenceDate);
 		currentData = ohlcvData;
 
 		// Track loaded parameters
-		lastLoadedParams = { symbol, timeframe, bars, analysisDate };
+		lastLoadedParams = { symbol, timeframe, bars, referenceDate };
 
 		// Update main chart
 		updateMainChart(ohlcvData);
 
 		// Update chart title with backtesting info
 		let chartTitle = `${symbol} - ${timeframe}`;
-		if (analysisDate) chartTitle += ` (Backtesting: ${new Date(analysisDate).toLocaleDateString()})`;
+		if (referenceDate) chartTitle += ` (Backtesting: ${new Date(referenceDate).toLocaleDateString()})`;
 
 		document.getElementById('chartTitle').textContent = chartTitle;
 
 		// Show/hide backtesting banner
 		const backtestingInfo = document.getElementById('backtestingInfo');
 		const backtestingDate = document.getElementById('backtestingDate');
-		if (analysisDate) {
-			backtestingDate.textContent = new Date(analysisDate).toLocaleString('fr-FR', {
+		if (referenceDate) {
+			backtestingDate.textContent = new Date(referenceDate).toLocaleString('fr-FR', {
 				year: 'numeric',
 				month: 'long',
 				day: 'numeric',
@@ -795,7 +795,7 @@ async function loadData() {
 		if (selectedIndicators.length > 0) {
 			showStatus(`Chargement de ${selectedIndicators.length} indicateur(s)...`, 'loading');
 
-			for (const indicator of selectedIndicators) await addIndicator(indicator, symbol, timeframe, bars, analysisDate);
+			for (const indicator of selectedIndicators) await addIndicator(indicator, symbol, timeframe, bars, referenceDate);
 
 			// Force time scale synchronization after loading indicators
 			const mainLogicalRange = mainChart.timeScale().getVisibleLogicalRange();
@@ -817,7 +817,7 @@ document.getElementById('loadBtn').addEventListener('click', loadData);
 
 // Clear date button handler
 document.getElementById('clearDateBtn').addEventListener('click', () => {
-	document.getElementById('analysisDate').value = '';
+	document.getElementById('referenceDate').value = '';
 	document.getElementById('backtestingInfo').style.display = 'none';
 	// Automatically reload data in real-time mode
 	loadData();
@@ -967,7 +967,7 @@ else tryInitCharts();
 	if (!webhookUrlInput || !webhookCallBtn) return;
 
 	// Set default analysis date to now
-	const webhookDateInput = document.getElementById('webhookAnalysisDate');
+	const webhookDateInput = document.getElementById('webhookReferenceDate');
 	if (webhookDateInput && !webhookDateInput.value) {
 		const now = new Date();
 		now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
@@ -1002,7 +1002,7 @@ else tryInitCharts();
 		}
 
 		const symbol = document.getElementById('webhookSymbol').value.trim().toUpperCase();
-		const analysisDate = document.getElementById('webhookAnalysisDate').value;
+		const referenceDate = document.getElementById('webhookReferenceDate').value;
 		const long = document.getElementById('webhookLong').value;
 		const medium = document.getElementById('webhookMedium').value;
 		const short = document.getElementById('webhookShort').value;
@@ -1010,7 +1010,7 @@ else tryInitCharts();
 		// Build GET query params
 		const params = new URLSearchParams();
 		if (symbol) params.set('symbol', symbol);
-		if (analysisDate) params.set('analysisDate', new Date(analysisDate).toISOString());
+		if (referenceDate) params.set('referenceDate', new Date(referenceDate).toISOString());
 		params.set('longTimeframe', long);
 		params.set('mediumTimeframe', medium);
 		params.set('shortTimeframe', short);

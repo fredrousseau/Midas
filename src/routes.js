@@ -203,7 +203,7 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/market-data/ohlcv',
 		asyncHandler(async (req) => {
-			const { symbol, timeframe, count, from, to, analysisDate } = parseTradingParams(req.query);
+			const { symbol, timeframe, count, from, to, referenceDate } = parseTradingParams(req.query);
 			logger.info('GET /api/v1/market-data/ohlcv - Fetching OHLCV');
 
 			if (!symbol) {
@@ -212,7 +212,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketDataService.loadOHLCV({ symbol, timeframe, count, from, to, analysisDate });
+			return await marketDataService.loadOHLCV({ symbol, timeframe, count, from, to, referenceDate });
 		})
 	);
 
@@ -286,9 +286,9 @@ export function registerRoutes(parameters) {
 		'/api/v1/indicators/:name/series',
 		asyncHandler(async (req) => {
 			const { name } = req.params;
-			const { symbol, config, analysisDate } = req.query;
+			const { symbol, config, referenceDate } = req.query;
 			const { timeframe, bars } = parseTradingParams(req.query);
-			logger.info(`GET /api/v1/indicators/${name}/series - Getting time series for ${symbol}${analysisDate ? ` at ${analysisDate}` : ''}`);
+			logger.info(`GET /api/v1/indicators/${name}/series - Getting time series for ${symbol}${referenceDate ? ` at ${referenceDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -301,7 +301,7 @@ export function registerRoutes(parameters) {
 				indicator: name,
 				timeframe,
 				bars,
-				analysisDate,
+				referenceDate,
 				config: config ? JSON.parse(config) : {},
 			});
 		})
@@ -312,9 +312,9 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/regime/detect',
 		asyncHandler(async (req) => {
-			const { analysisDate } = req.query;
+			const { referenceDate } = req.query;
 			const { symbol, timeframe, count } = parseTradingParams(req.query);
-			logger.info(`GET /api/v1/regime/detect - Detecting market regime${analysisDate ? ` at ${analysisDate}` : ''}`);
+			logger.info(`GET /api/v1/regime/detect - Detecting market regime${referenceDate ? ` at ${referenceDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -322,7 +322,7 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
-			return await marketContextService.detectRegime({ symbol, timeframe, count, analysisDate });
+			return await marketContextService.detectRegime({ symbol, timeframe, count, referenceDate });
 		})
 	);
 
@@ -331,8 +331,8 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/context/enriched',
 		asyncHandler(async (req) => {
-			const { symbol, long, medium, short, analysisDate } = req.query;
-			logger.info(`GET /api/v1/context/enriched - Unified enriched context${analysisDate ? ` at ${analysisDate}` : ''}`);
+			const { symbol, long, medium, short, referenceDate } = req.query;
+			logger.info(`GET /api/v1/context/enriched - Unified enriched context${referenceDate ? ` at ${referenceDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -356,7 +356,7 @@ export function registerRoutes(parameters) {
 			return await marketContextService.generateContext({
 				symbol,
 				timeframes: timeframesObj,
-				analysisDate,
+				referenceDate,
 			});
 		})
 	);
@@ -366,8 +366,8 @@ export function registerRoutes(parameters) {
 	app.get(
 		'/api/v1/context/llm',
 		asyncHandler(async (req) => {
-			const { symbol, long, medium, short, analysisDate } = req.query;
-			logger.info(`GET /api/v1/context/llm - LLM-optimized context${analysisDate ? ` at ${analysisDate}` : ''}`);
+			const { symbol, long, medium, short, referenceDate } = req.query;
+			logger.info(`GET /api/v1/context/llm - LLM-optimized context${referenceDate ? ` at ${referenceDate}` : ''}`);
 
 			if (!symbol) {
 				const error = new Error('symbol is required');
@@ -391,7 +391,7 @@ export function registerRoutes(parameters) {
 			return await marketContextService.generateLLMContext({
 				symbol,
 				timeframes: timeframesObj,
-				analysisDate,
+				referenceDate,
 			});
 		})
 	);

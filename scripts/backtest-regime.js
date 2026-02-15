@@ -528,7 +528,7 @@ async function main() {
 				symbol,
 				timeframe,
 				count: 200,
-				analysisDate: currentDate,
+				referenceDate: currentDate,
 			});
 
 			// Measure actual movement on [T-lookback, T] (same period)

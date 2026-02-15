@@ -99,7 +99,7 @@ Frontend must extract `errorData.error.message` (not `errorData.error` which is 
 ### DataProvider Usage
 
 - Method: `loadOHLCV(options)` - NOT `getOHLCV`
-- Parameters: `{ symbol, timeframe, count, from, to, analysisDate }`
+- Parameters: `{ symbol, timeframe, count, from, to, referenceDate }`
 - `to` must be **timestamp in milliseconds** (`date.getTime()`), not a Date object
 
 ## API Endpoints

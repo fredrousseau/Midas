@@ -15,12 +15,12 @@ export class VolumeEnricher {
 	/**
 	 * Enrich volume indicators
 	 */
-	async enrich({ ohlcvData, indicatorService, symbol, timeframe, analysisDate }) {
+	async enrich({ ohlcvData, indicatorService, symbol, timeframe, referenceDate }) {
 		const bars = ohlcvData.bars;
 
 		// Get indicator series
-		const obvSeries = await this._getIndicatorSafe(indicatorService, symbol, 'obv', timeframe, analysisDate);
-		const vwapSeries = await this._getIndicatorSafe(indicatorService, symbol, 'vwap', timeframe, analysisDate);
+		const obvSeries = await this._getIndicatorSafe(indicatorService, symbol, 'obv', timeframe, referenceDate);
+		const vwapSeries = await this._getIndicatorSafe(indicatorService, symbol, 'vwap', timeframe, referenceDate);
 
 		return {
 			volume: this._enrichVolume(bars),
@@ -42,14 +42,14 @@ export class VolumeEnricher {
 	 * Get indicator series
 	 * @throws {Error} If indicator calculation fails
 	 */
-	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, analysisDate) {
+	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, referenceDate) {
 		const bars = this._getAdaptiveBarCount(timeframe);
 		const series = await indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator,
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: {}
 		});
 		return series;

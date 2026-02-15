@@ -45,7 +45,7 @@ Missing dependencies throw "requires X instance in options" errors.
 ## API Patterns
 **DataProvider usage:**
 - Method: `loadOHLCV(options)` (NOT `getOHLCV`)
-- Parameters: `{ symbol, timeframe, count, from, to, analysisDate }`
+- Parameters: `{ symbol, timeframe, count, from, to, referenceDate }`
 - Timestamps: Use `date.getTime()` (milliseconds), not Date objects
 
 **Route handlers:**

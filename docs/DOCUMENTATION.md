@@ -33,7 +33,7 @@ Midas est une plateforme d'analyse technique sophistiquée qui transforme des do
 - **Recommandations Automatiques** - TRADE / PREPARE / CAUTION / WAIT avec confiance
 - **Détection de Conflits 3-Niveaux** - High / Moderate / Low severity
 - **Contexte Trading Actionnable** - Scénarios, entries, stops, targets, risk/reward
-- **Support Analyse Historique** - Visualisation historique avec `analysisDate`
+- **Support Analyse Historique** - Visualisation historique avec `referenceDate`
 
 ### Technologies
 
@@ -141,10 +141,10 @@ Point d'entrée principal qui coordonne tous les sous-services.
 **Méthodes Principales:**
 ```javascript
 // Analyse complète multi-timeframe
-async generateMarketAnalysis({ symbol, timeframes, count, analysisDate })
+async generateMarketAnalysis({ symbol, timeframes, count, referenceDate })
 
 // Analyse complète avec trading context
-async generateCompleteAnalysis({ symbol, timeframes, count, analysisDate })
+async generateCompleteAnalysis({ symbol, timeframes, count, referenceDate })
 ```
 
 ### StatisticalContextService

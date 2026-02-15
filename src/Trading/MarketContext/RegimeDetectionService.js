@@ -334,13 +334,13 @@ export class RegimeDetectionService {
 	 * Analyze volume for breakout confirmation
 	 * @private
 	 */
-	async _analyzeVolume(symbol, timeframe, bars, analysisDate) {
+	async _analyzeVolume(symbol, timeframe, bars, referenceDate) {
 		try {
 			const ohlcv = await this.dataProvider.loadOHLCV({
 				symbol,
 				timeframe,
 				count: Math.max(bars, config.volumePeriod + 10),
-				analysisDate,
+				referenceDate,
 				useCache: true,
 				detectGaps: false,
 			});
@@ -710,11 +710,11 @@ export class RegimeDetectionService {
 
 	/**
 	 * Detect market regime for a symbol
-	 * @param {Object} options - { symbol, timeframe, count, analysisDate, useCache, detectGaps }
+	 * @param {Object} options - { symbol, timeframe, count, referenceDate, useCache, detectGaps }
 	 * @returns {Promise<Object>} Regime detection result
 	 */
 	async detectRegime(options = {}) {
-		const { symbol, timeframe = '1h', count = 200, analysisDate } = options;
+		const { symbol, timeframe = '1h', count = 200, referenceDate } = options;
 
 		if (!symbol) throw new Error('Symbol is required');
 
@@ -728,7 +728,7 @@ export class RegimeDetectionService {
 			symbol,
 			timeframe,
 			count: Math.max(count, config.minBars + 50),
-			analysisDate,
+			referenceDate,
 			useCache: options.useCache !== false,
 			detectGaps: options.detectGaps !== false,
 		});
@@ -743,13 +743,13 @@ export class RegimeDetectionService {
 		===================================================== */
 
 		const [adxData, atrShort, atrLong, er, emaShort, emaLong, volumeAnalysis] = await Promise.all([
-			this._getADX(symbol, timeframe, ohlcv.bars.length, analysisDate),
-			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrShortPeriod, analysisDate),
-			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrLongPeriod, analysisDate),
+			this._getADX(symbol, timeframe, ohlcv.bars.length, referenceDate),
+			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrShortPeriod, referenceDate),
+			this._getATR(symbol, timeframe, ohlcv.bars.length, config.atrLongPeriod, referenceDate),
 			this._getEfficiencyRatio(closes, config.erPeriod),
-			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maShortPeriod, analysisDate),
-			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maLongPeriod, analysisDate),
-			this._analyzeVolume(symbol, timeframe, ohlcv.bars.length, analysisDate),
+			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maShortPeriod, referenceDate),
+			this._getEMA(symbol, timeframe, ohlcv.bars.length, config.maLongPeriod, referenceDate),
+			this._analyzeVolume(symbol, timeframe, ohlcv.bars.length, referenceDate),
 		]);
 
 		// Extract current values with null safety
@@ -1044,7 +1044,7 @@ export class RegimeDetectionService {
 		};
 
 		this.logger.info(
-			`Detecting regime for ${symbol} on ${timeframe}${analysisDate ? ` at ${analysisDate}` : ''} — Regime: ${regime} (confidence: ${confidence}, phase: ${adxSlope.phase}) in ${result.metadata.detectionDuration}ms`
+			`Detecting regime for ${symbol} on ${timeframe}${referenceDate ? ` at ${referenceDate}` : ''} — Regime: ${regime} (confidence: ${confidence}, phase: ${adxSlope.phase}) in ${result.metadata.detectionDuration}ms`
 		);
 
 		return result;
@@ -1054,13 +1054,13 @@ export class RegimeDetectionService {
 	 * Get ADX indicator with plusDI and minusDI using IndicatorService
 	 * @private
 	 */
-	async _getADX(symbol, timeframe, bars, analysisDate) {
+	async _getADX(symbol, timeframe, bars, referenceDate) {
 		const series = await this.indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator: 'adx',
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: { period: config.adxPeriod },
 		});
 
@@ -1077,13 +1077,13 @@ export class RegimeDetectionService {
 	 * Get ATR indicator using IndicatorService
 	 * @private
 	 */
-	async _getATR(symbol, timeframe, bars, period, analysisDate) {
+	async _getATR(symbol, timeframe, bars, period, referenceDate) {
 		const series = await this.indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator: 'atr',
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: { period },
 		});
 
@@ -1096,13 +1096,13 @@ export class RegimeDetectionService {
 	 * Get EMA indicator using IndicatorService
 	 * @private
 	 */
-	async _getEMA(symbol, timeframe, bars, period, analysisDate) {
+	async _getEMA(symbol, timeframe, bars, period, referenceDate) {
 		const series = await this.indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator: 'ema',
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: { period },
 		});
 

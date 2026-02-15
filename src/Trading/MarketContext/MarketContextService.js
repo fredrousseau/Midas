@@ -35,15 +35,15 @@ export class MarketContextService {
 	/**
 	 * Generate full market context for a symbol across multiple timeframes
 	 * Uses adaptive bar counts based on timeframe for optimal performance
-	 * @param {Object} params - { symbol, timeframes, analysisDate }
+	 * @param {Object} params - { symbol, timeframes, referenceDate }
 	 * @returns {Promise<Object>} - Complete context with alignment and conflicts
 	 */
-	async generateContext({ symbol, timeframes, analysisDate }) {
+	async generateContext({ symbol, timeframes, referenceDate }) {
 		// Generate statistical context with built-in alignment analysis
 		const statContext = await this.statisticalContextService.generateFullContext({
 			symbol,
 			timeframes,
-			analysisDate,
+			referenceDate,
 		});
 
 		const alignment = statContext._internal_alignment;
@@ -57,7 +57,7 @@ export class MarketContextService {
 		return {
 			symbol,
 			timestamp: new Date().toISOString(),
-			analysisDate: analysisDate || null,
+			referenceDate: referenceDate || null,
 			statistical_context: cleanStatContext,
 			multi_timeframe_alignment: {
 				...alignment,
@@ -87,15 +87,15 @@ export class MarketContextService {
 	 * Generate LLM-optimized market context
 	 * Returns a clean, interpreted format suitable for LLM decision-making
 	 * Removes technical metadata, keeps only actionable information
-	 * @param {Object} params - { symbol, timeframes, analysisDate }
+	 * @param {Object} params - { symbol, timeframes, referenceDate }
 	 * @returns {Promise<Object>} - LLM-ready context
 	 */
-	async generateLLMContext({ symbol, timeframes, analysisDate }) {
+	async generateLLMContext({ symbol, timeframes, referenceDate }) {
 		// Generate full context
 		const statContext = await this.statisticalContextService.generateFullContext({
 			symbol,
 			timeframes,
-			analysisDate,
+			referenceDate,
 		});
 
 		const alignment = statContext._internal_alignment;
@@ -107,11 +107,11 @@ export class MarketContextService {
 	/**
 	 * Detect market regime for a single symbol and timeframe
 	 * Proxy method for RegimeDetectionService
-	 * @param {Object} params - { symbol, timeframe, count, analysisDate }
+	 * @param {Object} params - { symbol, timeframe, count, referenceDate }
 	 * @returns {Promise<Object>} - Regime detection result
 	 */
-	async detectRegime({ symbol, timeframe = '1h', count = 200, analysisDate }) {
-		return await this.regimeDetectionService.detectRegime({ symbol, timeframe, count, analysisDate });
+	async detectRegime({ symbol, timeframe = '1h', count = 200, referenceDate }) {
+		return await this.regimeDetectionService.detectRegime({ symbol, timeframe, count, referenceDate });
 	}
 }
 

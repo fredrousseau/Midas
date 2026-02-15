@@ -35,9 +35,9 @@ export class MovingAveragesEnricher {
 	 * @param {string} symbol - Symbol to analyze
 	 * @param {string} timeframe - Timeframe to analyze
 	 * @param {number} currentPrice - Current price
-	 * @param {string} analysisDate - Optional analysis date for historical analysis
+	 * @param {string} referenceDate - Optional analysis date for historical analysis
 	 */
-	async enrich({ _ohlcvData, indicatorService, symbol, timeframe, currentPrice, analysisDate }) {
+	async enrich({ _ohlcvData, indicatorService, symbol, timeframe, currentPrice, referenceDate }) {
 		// ✅ Get EMAs from EXISTING calculations via indicatorService
 		const emas = {};
 		for (const period of this.emaPeriods) {
@@ -47,7 +47,7 @@ export class MovingAveragesEnricher {
 				indicator: 'ema',
 				timeframe,
 				bars,
-				analysisDate,
+				referenceDate,
 				config: { period },
 			});
 
@@ -67,7 +67,7 @@ export class MovingAveragesEnricher {
 				indicator: 'sma',
 				timeframe,
 				bars,
-				analysisDate,
+				referenceDate,
 				config: { period },
 			});
 

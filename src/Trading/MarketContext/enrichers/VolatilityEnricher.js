@@ -42,11 +42,11 @@ export class VolatilityEnricher {
 	/**
 	 * Enrich volatility indicators
 	 */
-	async enrich({ ohlcvData, indicatorService, symbol, timeframe, currentPrice, higherTimeframeData, analysisDate }) {
+	async enrich({ ohlcvData, indicatorService, symbol, timeframe, currentPrice, higherTimeframeData, referenceDate }) {
 		// Get indicator series
-		const atrSeries = await this._getIndicatorSafe(indicatorService, symbol, 'atr', timeframe, analysisDate);
-		const bbSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bb', timeframe, analysisDate);
-		const bbWidthSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bbWidth', timeframe, analysisDate);
+		const atrSeries = await this._getIndicatorSafe(indicatorService, symbol, 'atr', timeframe, referenceDate);
+		const bbSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bb', timeframe, referenceDate);
+		const bbWidthSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bbWidth', timeframe, referenceDate);
 
 		return {
 			atr: atrSeries ? this._enrichATR(atrSeries, timeframe, higherTimeframeData) : null,
@@ -68,14 +68,14 @@ export class VolatilityEnricher {
 	 * Get indicator series
 	 * @throws {Error} If indicator calculation fails
 	 */
-	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, analysisDate) {
+	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, referenceDate) {
 		const bars = this._getAdaptiveBarCount(timeframe);
 		const series = await indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator,
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: {}
 		});
 		return series;

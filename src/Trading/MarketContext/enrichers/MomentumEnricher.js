@@ -15,15 +15,15 @@ export class MomentumEnricher {
 	/**
 	 * Enrich momentum indicators
 	 */
-	async enrich({ ohlcvData, indicatorService, symbol, timeframe, higherTimeframeData, analysisDate }) {
+	async enrich({ ohlcvData, indicatorService, symbol, timeframe, higherTimeframeData, referenceDate }) {
 		const closes = ohlcvData.bars.map(b => b.close);
 		const highs = ohlcvData.bars.map(b => b.high);
 		const lows = ohlcvData.bars.map(b => b.low);
 
 		// Get indicator series from IndicatorService
-		const rsiSeries = await this._getIndicatorSafe(indicatorService, symbol, 'rsi', timeframe, analysisDate);
-		const macdSeries = await this._getIndicatorSafe(indicatorService, symbol, 'macd', timeframe, analysisDate);
-		const stochSeries = await this._getIndicatorSafe(indicatorService, symbol, 'stochastic', timeframe, analysisDate);
+		const rsiSeries = await this._getIndicatorSafe(indicatorService, symbol, 'rsi', timeframe, referenceDate);
+		const macdSeries = await this._getIndicatorSafe(indicatorService, symbol, 'macd', timeframe, referenceDate);
+		const stochSeries = await this._getIndicatorSafe(indicatorService, symbol, 'stochastic', timeframe, referenceDate);
 
 		return {
 			rsi: rsiSeries ? this._enrichRSI(rsiSeries, closes, higherTimeframeData) : null,
@@ -45,14 +45,14 @@ export class MomentumEnricher {
 	 * Get indicator series
 	 * @throws {Error} If indicator calculation fails
 	 */
-	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, analysisDate) {
+	async _getIndicatorSafe(indicatorService, symbol, indicator, timeframe, referenceDate) {
 		const bars = this._getAdaptiveBarCount(timeframe);
 		const series = await indicatorService.getIndicatorTimeSeries({
 			symbol,
 			indicator,
 			timeframe,
 			bars,
-			analysisDate,
+			referenceDate,
 			config: {}
 		});
 		return series;
