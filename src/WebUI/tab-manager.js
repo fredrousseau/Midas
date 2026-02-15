@@ -6,8 +6,18 @@
 document.addEventListener('DOMContentLoaded', () => {
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = {
-        charts: document.getElementById('chartsTab')
+        charts: document.getElementById('chartsTab'),
+        webhook: document.getElementById('webhookTab')
     };
+
+    // Elements to hide/show based on active tab (charts-only sidebar elements)
+    const chartsSidebarElements = [
+        document.getElementById('indicatorStatsContainer'),
+        document.getElementById('clearAllBtn'),
+        document.getElementById('searchContainer'),
+        document.getElementById('selectedIndicatorsSection'),
+        document.getElementById('sidebarContent')
+    ];
 
     // Function to switch tabs
     function switchTab(tabName) {
@@ -29,6 +39,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     tabContents[key].classList.remove('active');
                 }
             }
+        });
+
+        // Show/hide charts-only sidebar elements
+        const isCharts = tabName === 'charts';
+        chartsSidebarElements.forEach(el => {
+            if (el) el.style.display = isCharts ? '' : 'none';
         });
 
         // Save active tab to localStorage
