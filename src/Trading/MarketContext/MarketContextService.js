@@ -3,9 +3,8 @@
  * Generates multi-timeframe market context for trading decisions
  * Orchestrates StatisticalContextService and RegimeDetectionService
  *
- * Output formats:
+ * Output format:
  * - generateContext(): Full technical data for internal use/WebUI
- * - generateLLMContext(): Optimized format for LLM decision-making
  */
 
 import StatisticalContextService from './StatisticalContextService.js';
@@ -81,27 +80,6 @@ export class MarketContextService {
 		if (alignment_score >= 0.75 && !hasModerateConflicts) return 'good';
 		if (alignment_score >= 0.6) return 'fair';
 		return 'poor';
-	}
-
-	/**
-	 * Generate LLM-optimized market context
-	 * Returns a clean, interpreted format suitable for LLM decision-making
-	 * Removes technical metadata, keeps only actionable information
-	 * @param {Object} params - { symbol, timeframes, referenceDate }
-	 * @returns {Promise<Object>} - LLM-ready context
-	 */
-	async generateLLMContext({ symbol, timeframes, referenceDate }) {
-		// Generate full context
-		const statContext = await this.statisticalContextService.generateFullContext({
-			symbol,
-			timeframes,
-			referenceDate,
-		});
-
-		const alignment = statContext._internal_alignment;
-
-		// Transform to LLM format
-		return this.statisticalContextService.transformForLLM(statContext, alignment);
 	}
 
 	/**
