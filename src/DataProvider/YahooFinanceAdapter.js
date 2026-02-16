@@ -31,6 +31,10 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	static VALID_TIMEFRAMES = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w', '1M'];
 	static MAX_LIMIT = 2000;
 
+	// Cache for dynamic pairs (avoids repeated API calls)
+	static _pairsCache = { data: null, expiresAt: 0 };
+	static PAIRS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
 	// Mapping from Midas timeframe format to Yahoo Finance interval strings
 	static TIMEFRAME_MAP = {
 		'1m':  '1m',
@@ -156,20 +160,21 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	}
 
 	/**
-	 * Get list of available pairs/symbols
-	 * For Yahoo Finance, returns a curated list of major CAC40 + international symbols.
-	 * Optionally accepts a search query to find specific tickers.
+	 * Get list of available pairs/symbols.
+	 * Fetches dynamically from Yahoo Finance (trending + screener) with a 6h cache.
+	 * Falls back to a curated static list if the dynamic fetch fails.
 	 *
 	 * @param {Object} [options={}]
 	 * @param {string} [options.query] - Search query (e.g., 'LVMH', 'Total')
 	 * @param {string} [options.market] - Market filter: 'FR' (Euronext), 'US', 'all'
+	 * @param {boolean} [options.refresh] - Force cache refresh
 	 * @returns {Promise<Array>} Array of symbol objects
 	 */
 	async getPairs(options = {}) {
-		const { query, market = 'all' } = options;
+		const { query, market = 'all', refresh = false } = options;
 
 		// If a search query is provided, use Yahoo Finance search
-		if (query) 
+		if (query)
 			try {
 				const results = await this._yf.search(query);
 				return (results?.quotes || []).map(q => ({
@@ -186,46 +191,131 @@ export class YahooFinanceAdapter extends GenericAdapter {
 				return [];
 			}
 
-		// Default: return curated CAC40 + major indices list
-		const cac40 = [
-			{ symbol: 'MC.PA',   name: 'LVMH',              quoteAsset: 'EUR' },
-			{ symbol: 'TTE.PA',  name: 'TotalEnergies',      quoteAsset: 'EUR' },
-			{ symbol: 'SAN.PA',  name: 'Sanofi',             quoteAsset: 'EUR' },
-			{ symbol: 'AIR.PA',  name: 'Airbus',             quoteAsset: 'EUR' },
-			{ symbol: 'OR.PA',   name: "L'Oréal",            quoteAsset: 'EUR' },
-			{ symbol: 'BNP.PA',  name: 'BNP Paribas',        quoteAsset: 'EUR' },
-			{ symbol: 'CS.PA',   name: 'AXA',                quoteAsset: 'EUR' },
-			{ symbol: 'SU.PA',   name: 'Schneider Electric',  quoteAsset: 'EUR' },
-			{ symbol: 'AI.PA',   name: 'Air Liquide',         quoteAsset: 'EUR' },
-			{ symbol: 'BN.PA',   name: 'Danone',              quoteAsset: 'EUR' },
-			{ symbol: 'KER.PA',  name: 'Kering',              quoteAsset: 'EUR' },
-			{ symbol: 'RI.PA',   name: 'Pernod Ricard',       quoteAsset: 'EUR' },
-			{ symbol: 'DSY.PA',  name: 'Dassault Systèmes',   quoteAsset: 'EUR' },
-			{ symbol: 'CAP.PA',  name: 'Capgemini',           quoteAsset: 'EUR' },
-			{ symbol: 'DG.PA',   name: 'Vinci',               quoteAsset: 'EUR' },
-			{ symbol: 'HO.PA',   name: 'Thales',              quoteAsset: 'EUR' },
-			{ symbol: 'VIE.PA',  name: 'Veolia',              quoteAsset: 'EUR' },
-			{ symbol: 'ENGI.PA', name: 'Engie',               quoteAsset: 'EUR' },
-			{ symbol: 'SGO.PA',  name: 'Saint-Gobain',        quoteAsset: 'EUR' },
-			{ symbol: 'MT.AS',   name: 'ArcelorMittal',       quoteAsset: 'EUR' },
+		// Return from cache if still valid
+		const cache = YahooFinanceAdapter._pairsCache;
+		if (!refresh && cache.data && Date.now() < cache.expiresAt) {
+			this.logger.info('YahooFinanceAdapter: getPairs served from cache');
+			return this._filterByMarket(cache.data, market);
+		}
+
+		// Fetch dynamically, fall back to static list on error
+		try {
+			const all = await this._fetchDynamicPairs();
+			YahooFinanceAdapter._pairsCache = { data: all, expiresAt: Date.now() + YahooFinanceAdapter.PAIRS_CACHE_TTL_MS };
+			this.logger.info(`YahooFinanceAdapter: getPairs fetched ${all.length} symbols dynamically`);
+			return this._filterByMarket(all, market);
+		} catch (error) {
+			this.logger.warn(`YahooFinanceAdapter: dynamic getPairs failed (${error.message}), using static fallback`);
+			const all = this._staticPairs();
+			return this._filterByMarket(all, market);
+		}
+	}
+
+	/**
+	 * Fetch pairs dynamically from Yahoo Finance trending + screener APIs.
+	 * Combines results from FR and US regions and deduplicates by symbol.
+	 *
+	 * @private
+	 * @returns {Promise<Array>}
+	 */
+	async _fetchDynamicPairs() {
+		// Indices are always static (Yahoo Finance has no index-member API)
+		const indices = [
+			{ symbol: '^FCHI',     name: 'CAC 40',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: '^STOXX50E', name: 'Euro Stoxx 50', exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: '^GSPC',     name: 'S&P 500',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+			{ symbol: '^IXIC',     name: 'Nasdaq',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+			{ symbol: '^DJI',      name: 'Dow Jones',     exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+		];
+
+		// Fetch trending symbols for FR and US in parallel
+		const [frTrending, usTrending, screenerResults] = await Promise.allSettled([
+			this._yf.trendingSymbols('FR'),
+			this._yf.trendingSymbols('US'),
+			this._yf.screener({ scrIds: 'most_actives', count: 50 }),
+		]);
+
+		const normalize = (raw, defaultQuote) => {
+			const quotes = Array.isArray(raw) ? raw : (raw?.quotes || []);
+			return quotes
+				.filter(q => q.symbol && q.quoteType !== 'INDEX')
+				.map(q => ({
+					symbol:     q.symbol,
+					name:       q.shortname || q.longname || q.displayName || q.symbol,
+					exchange:   q.fullExchangeName || q.exchange || '',
+					type:       q.quoteType || 'EQUITY',
+					baseAsset:  q.symbol,
+					quoteAsset: q.currency || defaultQuote,
+					status:     'TRADING',
+				}));
+		};
+
+		const frSymbols  = frTrending.status  === 'fulfilled' ? normalize(frTrending.value,  'EUR') : [];
+		const usSymbols  = usTrending.status  === 'fulfilled' ? normalize(usTrending.value,  'USD') : [];
+		const scrSymbols = screenerResults.status === 'fulfilled' ? normalize(screenerResults.value?.quotes || [], 'USD') : [];
+
+		// Merge and deduplicate by symbol
+		const seen = new Set();
+		const equities = [...frSymbols, ...usSymbols, ...scrSymbols].filter(s => {
+			if (seen.has(s.symbol)) return false;
+			seen.add(s.symbol);
+			return true;
+		});
+
+		if (equities.length === 0)
+			throw new Error('No symbols returned from Yahoo Finance trending/screener APIs');
+
+		return [...equities, ...indices];
+	}
+
+	/**
+	 * Filter a pairs list by market.
+	 * @private
+	 */
+	_filterByMarket(all, market) {
+		if (market === 'FR') return all.filter(s => s.quoteAsset === 'EUR' && s.type !== 'INDEX');
+		if (market === 'US') return all.filter(s => s.quoteAsset === 'USD' && s.type !== 'INDEX');
+		return all;
+	}
+
+	/**
+	 * Static fallback list of major CAC40 + indices.
+	 * Used when dynamic fetch fails.
+	 * @private
+	 */
+	_staticPairs() {
+		const equities = [
+			{ symbol: 'MC.PA',   name: 'LVMH',              exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'TTE.PA',  name: 'TotalEnergies',      exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'SAN.PA',  name: 'Sanofi',             exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'AIR.PA',  name: 'Airbus',             exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'OR.PA',   name: "L'Oréal",            exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'BNP.PA',  name: 'BNP Paribas',        exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'CS.PA',   name: 'AXA',                exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'SU.PA',   name: 'Schneider Electric',  exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'AI.PA',   name: 'Air Liquide',         exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'BN.PA',   name: 'Danone',              exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'KER.PA',  name: 'Kering',              exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'RI.PA',   name: 'Pernod Ricard',       exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'DSY.PA',  name: 'Dassault Systèmes',   exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'CAP.PA',  name: 'Capgemini',           exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'DG.PA',   name: 'Vinci',               exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'HO.PA',   name: 'Thales',              exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'VIE.PA',  name: 'Veolia',              exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'ENGI.PA', name: 'Engie',               exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'SGO.PA',  name: 'Saint-Gobain',        exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: 'MT.AS',   name: 'ArcelorMittal',       exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
 		];
 
 		const indices = [
-			{ symbol: '^FCHI',  name: 'CAC 40',     quoteAsset: 'EUR' },
-			{ symbol: '^STOXX50E', name: 'Euro Stoxx 50', quoteAsset: 'EUR' },
-			{ symbol: '^GSPC',  name: 'S&P 500',    quoteAsset: 'USD' },
-			{ symbol: '^IXIC',  name: 'Nasdaq',     quoteAsset: 'USD' },
-			{ symbol: '^DJI',   name: 'Dow Jones',  quoteAsset: 'USD' },
+			{ symbol: '^FCHI',     name: 'CAC 40',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: '^STOXX50E', name: 'Euro Stoxx 50', exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+			{ symbol: '^GSPC',     name: 'S&P 500',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+			{ symbol: '^IXIC',     name: 'Nasdaq',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+			{ symbol: '^DJI',      name: 'Dow Jones',     exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
 		];
 
-		const all = [
-			...cac40.map(s => ({ ...s, exchange: 'Euronext', type: 'EQUITY', status: 'TRADING' })),
-			...indices.map(s => ({ ...s, exchange: 'INDEX', type: 'INDEX', status: 'TRADING' })),
-		];
-
-		if (market === 'FR')  return all.filter(s => s.quoteAsset === 'EUR' && s.type === 'EQUITY');
-		if (market === 'US')  return all.filter(s => s.quoteAsset === 'USD');
-		return all;
+		return [...equities, ...indices];
 	}
 
 	/**
