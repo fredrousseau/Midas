@@ -862,7 +862,90 @@ document.querySelectorAll('#indicatorList input').forEach((checkbox) => {
 
 // Enter key support
 document.getElementById('symbol').addEventListener('keypress', (e) => {
-	if (e.key === 'Enter') loadData();
+	if (e.key === 'Enter') {
+		hideSymbolSuggestions();
+		loadData();
+	}
+});
+
+// ─── Symbol autocomplete ───────────────────────────────────────────────────
+
+const symbolInput       = document.getElementById('symbol');
+const suggestionsBox    = document.getElementById('symbol-suggestions');
+let   _searchDebounceId = null;
+let   _activeIndex      = -1;
+
+function hideSymbolSuggestions() {
+	suggestionsBox.style.display = 'none';
+	suggestionsBox.innerHTML = '';
+	_activeIndex = -1;
+}
+
+function showSymbolSuggestions(results) {
+	if (!results || results.length === 0) { hideSymbolSuggestions(); return; }
+
+	suggestionsBox.innerHTML = results.map((r, i) => {
+		const name     = r.name     ? `<span class="suggestion-name">${r.name}</span>` : '';
+		const exchange = r.exchange ? `<span class="suggestion-exchange">${r.exchange}</span>` : '';
+		const badge    = `<span class="suggestion-badge ${r._adapter || ''}">${r._adapter || ''}</span>`;
+		return `<div class="symbol-suggestion-item" data-index="${i}" data-symbol="${r.symbol}">
+			<span class="suggestion-symbol">${r.symbol}</span>${name}${exchange}${badge}
+		</div>`;
+	}).join('');
+
+	suggestionsBox.querySelectorAll('.symbol-suggestion-item').forEach(item => {
+		item.addEventListener('mousedown', (e) => {
+			e.preventDefault(); // prevent blur before click
+			symbolInput.value = item.dataset.symbol;
+			hideSymbolSuggestions();
+			loadData();
+		});
+	});
+
+	suggestionsBox.style.display = 'block';
+	_activeIndex = -1;
+}
+
+function navigateSuggestions(direction) {
+	const items = suggestionsBox.querySelectorAll('.symbol-suggestion-item');
+	if (!items.length) return;
+
+	items[_activeIndex]?.classList.remove('active');
+	_activeIndex = (_activeIndex + direction + items.length) % items.length;
+	const active = items[_activeIndex];
+	active.classList.add('active');
+	active.scrollIntoView({ block: 'nearest' });
+}
+
+symbolInput.addEventListener('keydown', (e) => {
+	if (e.key === 'ArrowDown') { e.preventDefault(); navigateSuggestions(1); }
+	if (e.key === 'ArrowUp')   { e.preventDefault(); navigateSuggestions(-1); }
+	if (e.key === 'Enter' && _activeIndex >= 0) {
+		const active = suggestionsBox.querySelectorAll('.symbol-suggestion-item')[_activeIndex];
+		if (active) { symbolInput.value = active.dataset.symbol; hideSymbolSuggestions(); loadData(); }
+	}
+	if (e.key === 'Escape') hideSymbolSuggestions();
+});
+
+symbolInput.addEventListener('input', () => {
+	clearTimeout(_searchDebounceId);
+	const q = symbolInput.value.trim();
+
+	if (q.length < 2) { hideSymbolSuggestions(); return; }
+
+	_searchDebounceId = setTimeout(async () => {
+		try {
+			const res  = await authenticatedFetch(`${API_BASE}/api/v1/market-data/search?q=${encodeURIComponent(q)}`);
+			const json = await res.json();
+			if (json.success && json.data?.results) showSymbolSuggestions(json.data.results);
+		} catch (_err) { /* silently ignore search errors */ }
+	}, 300);
+});
+
+// Hide dropdown when clicking outside
+document.addEventListener('click', (e) => {
+	if (!symbolInput.contains(e.target) && !suggestionsBox.contains(e.target))
+		hideSymbolSuggestions();
 });
 
 // Track last loaded parameters to detect mismatches

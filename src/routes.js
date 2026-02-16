@@ -230,6 +230,24 @@ export function registerRoutes(parameters) {
 		})
 	);
 
+	app.get(
+		'/api/v1/market-data/search',
+		asyncHandler(async (req) => {
+			const { q, source } = req.query;
+			logger.info(`GET /api/v1/market-data/search - query='${q}' source='${source || 'all'}'`);
+
+			if (!q || q.trim().length < 2) {
+				const error = new Error('q is required and must be at least 2 characters');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			const results = await marketDataService.search(q.trim(), { source });
+
+			return { query: q.trim(), count: results.length, results };
+		})
+	);
+
 	// ========== Channel : API / Type : CACHE MANAGEMENT ==========
 
 	app.get(

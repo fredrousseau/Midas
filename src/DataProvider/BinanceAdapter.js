@@ -126,6 +126,22 @@ export class BinanceAdapter extends GenericAdapter {
 	 * // Get all pairs
 	 * const allPairs = await provider.getPairs();
 	 */
+	/**
+	 * Search for symbols by ticker fragment (case-insensitive).
+	 * Binance has no company names, so this filters pairs whose symbol contains the query.
+	 *
+	 * @param {string} query - Ticker fragment (e.g., 'BTC', 'ETH')
+	 * @returns {Promise<Array>} Matching trading pairs
+	 */
+	async search(query) {
+		if (!query || typeof query !== 'string' || query.trim().length === 0)
+			throw new Error('search() requires a non-empty query string');
+
+		const upper = query.trim().toUpperCase();
+		const all = await this.getPairs({ status: 'TRADING' });
+		return all.filter(p => p.symbol.includes(upper) || p.baseAsset.includes(upper));
+	}
+
 	async getPairs(options = {}) {
 		const { quoteAsset, baseAsset, status = 'TRADING', permissions } = options;
 

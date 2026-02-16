@@ -160,6 +160,37 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	}
 
 	/**
+	 * Search for symbols by company name or ticker.
+	 *
+	 * @param {string} query - Search term (e.g., 'LVMH', 'Total', 'Apple')
+	 * @returns {Promise<Array>} Array of matching symbol objects
+	 */
+	async search(query) {
+		if (!query || typeof query !== 'string' || query.trim().length === 0)
+			throw new Error('search() requires a non-empty query string');
+
+		this.logger.info(`YahooFinanceAdapter: searching for '${query}'`);
+
+		try {
+			const results = await this._yf.search(query.trim());
+			return (results?.quotes || [])
+				.filter(q => q.symbol && q.quoteType !== 'OPTION')
+				.map(q => ({
+					symbol:     q.symbol,
+					name:       q.shortname || q.longname || q.symbol,
+					exchange:   q.exchDisp || q.exchange || '',
+					type:       q.quoteType || 'EQUITY',
+					baseAsset:  q.symbol,
+					quoteAsset: q.currency || '',
+					status:     'TRADING',
+				}));
+		} catch (error) {
+			this.logger.error(`YahooFinanceAdapter: search error for '${query}': ${error.message}`);
+			throw error;
+		}
+	}
+
+	/**
 	 * Get list of available pairs/symbols.
 	 * Fetches dynamically from Yahoo Finance (trending + screener) with a 6h cache.
 	 * Falls back to a curated static list if the dynamic fetch fails.

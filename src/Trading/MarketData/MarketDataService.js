@@ -39,6 +39,16 @@ export class MarketDataService {
 	}
 
 	/**
+	 * Search for symbols by company name or ticker
+	 * @param {string} query - Search term (e.g., 'LVMH', 'BTC', 'Apple')
+	 * @param {Object} [options] - Options (e.g., source: 'yahoo'|'binance')
+	 * @returns {Promise<Array>} Matching symbols with name, exchange, type
+	 */
+	async search(query, options = {}) {
+		return await this.dataProvider.search(query, options);
+	}
+
+	/**
 	 * Load OHLCV data for a symbol
 	 * @param {Object} options - Load options
 	 * @returns {Promise<Object>} OHLCV data

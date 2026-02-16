@@ -137,6 +137,46 @@ export class AdapterRouter {
 	}
 
 	/**
+	 * Search for symbols by name or ticker across both adapters.
+	 *
+	 * - Yahoo Finance: full-text search by company name or ticker
+	 * - Binance: filters pairs whose symbol/baseAsset contains the query
+	 *
+	 * Pass `options.source = 'binance'` or `'yahoo'` to restrict to one adapter.
+	 *
+	 * @param {string} query - Search term (e.g., 'LVMH', 'BTC', 'Apple')
+	 * @param {Object} [options={}]
+	 * @param {string} [options.source] - 'binance' | 'yahoo' | undefined (both)
+	 * @returns {Promise<Array>}
+	 */
+	async search(query, options = {}) {
+		const { source } = options;
+
+		if (source === 'yahoo')   return (await this.yahooAdapter.search(query)).map(r => ({ ...r, _adapter: 'yahoo' }));
+		if (source === 'binance') return (await this.binanceAdapter.search(query)).map(r => ({ ...r, _adapter: 'binance' }));
+
+		// Both in parallel
+		const [yahooResult, binanceResult] = await Promise.allSettled([
+			this.yahooAdapter.search(query),
+			this.binanceAdapter.search(query),
+		]);
+
+		const fromYahoo   = yahooResult.status   === 'fulfilled' ? yahooResult.value.map(r   => ({ ...r, _adapter: 'yahoo' }))   : [];
+		const fromBinance = binanceResult.status  === 'fulfilled' ? binanceResult.value.map(r => ({ ...r, _adapter: 'binance' })) : [];
+
+		if (yahooResult.status   === 'rejected') this.logger.warn(`AdapterRouter.search: Yahoo failed: ${yahooResult.reason?.message}`);
+		if (binanceResult.status === 'rejected') this.logger.warn(`AdapterRouter.search: Binance failed: ${binanceResult.reason?.message}`);
+
+		// Deduplicate by symbol, Yahoo results take precedence (richer data)
+		const seen = new Set();
+		return [...fromYahoo, ...fromBinance].filter(r => {
+			if (seen.has(r.symbol)) return false;
+			seen.add(r.symbol);
+			return true;
+		});
+	}
+
+	/**
 	 * Get available pairs.
 	 *
 	 * When no source is specified, returns the combined list from both adapters.

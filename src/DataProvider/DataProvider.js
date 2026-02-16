@@ -405,6 +405,16 @@ export class DataProvider {
 	getPairs(options) {
 		return this.dataAdapter.getPairs(options);
 	}
+
+	/**
+	 * Search for symbols by name or ticker
+	 * @param {string} query - Search term
+	 * @param {Object} [options] - Options (e.g., source: 'yahoo'|'binance')
+	 * @returns {Promise<Array>} Matching symbols
+	 */
+	search(query, options) {
+		return this.dataAdapter.search(query, options);
+	}
 	/**
 	 * Get cache statistics
 	 * @returns {Object} Cache statistics including size, TTL, and item details

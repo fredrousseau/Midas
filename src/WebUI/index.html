@@ -879,6 +879,75 @@
         .control-group.with-clear input {
             padding-right: 35px;
         }
+
+        .symbol-search-wrapper {
+            position: relative;
+        }
+
+        .symbol-suggestions {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1e1e1e;
+            border: 1px solid #444;
+            border-top: none;
+            border-radius: 0 0 4px 4px;
+            max-height: 240px;
+            overflow-y: auto;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .symbol-suggestion-item {
+            padding: 8px 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        .symbol-suggestion-item:last-child {
+            border-bottom: none;
+        }
+
+        .symbol-suggestion-item:hover,
+        .symbol-suggestion-item.active {
+            background: #2962ff22;
+        }
+
+        .suggestion-symbol {
+            font-weight: 600;
+            color: #e0e0e0;
+            font-size: 13px;
+            min-width: 80px;
+        }
+
+        .suggestion-name {
+            color: #999;
+            font-size: 12px;
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .suggestion-exchange {
+            color: #555;
+            font-size: 11px;
+        }
+
+        .suggestion-badge {
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: #333;
+            color: #888;
+        }
+
+        .suggestion-badge.yahoo  { background: #1a237e22; color: #5c6bc0; }
+        .suggestion-badge.binance { background: #f3a50022; color: #f3a500; }
     </style>
 </head>
 <body>
@@ -958,9 +1027,10 @@
                 </div>
 
                 <div class="controls">
-                    <div class="control-group">
+                    <div class="control-group symbol-search-wrapper">
                         <label for="symbol">Symbol</label>
-                        <input type="text" id="symbol" value="BTCUSDT" placeholder="ex: BTCUSDT">
+                        <input type="text" id="symbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
+                        <div id="symbol-suggestions" class="symbol-suggestions" style="display:none;"></div>
                     </div>
 
                     <div class="control-group">
