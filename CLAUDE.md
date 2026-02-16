@@ -50,7 +50,7 @@ LAYER 5: API Exposure (REST endpoints + WebUI)
 1. `MarketContextService.generateContext()` - Entry point
 2. `StatisticalContextService.generateFullContext()` - Gathers multi-timeframe statistical data
 3. 6 Enrichers execute in parallel: Momentum, Volatility, Volume, MovingAverages, PriceAction, Patterns
-4. `RegimeDetectionService` - Identifies market regime (9 types: trending/ranging/breakout x bull/bear/neutral)
+4. `RegimeDetectionService` - Identifies market regime (10 types: trending/ranging/breakout/volatile x bull/bear/neutral)
 5. Alignment analysis - Weighted multi-timeframe scoring
 6. Returns complete context (raw technical data)
 
