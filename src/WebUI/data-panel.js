@@ -1,4 +1,5 @@
 /* exported initDataPanel, setupChartClickListeners, dataPanelOpen, currentClickedData */
+/* global formatTimestamp, resizeCharts, indicatorSeries, seriesDisplayNames, mainChart, candlestickSeries */
 // Data panel management - displays candle and indicator data on click
 
 let dataPanelOpen = false;
@@ -54,19 +55,10 @@ function formatNumber(value, decimals = 2) {
     });
 }
 
-// Format timestamp to readable date
+// Format timestamp — delegates to formatTimestamp() from app.js (global)
 function formatDate(timestamp) {
     if (!timestamp) return '-';
-    const date = new Date(timestamp * 1000); // Convert from seconds to milliseconds
-    return date.toLocaleString('fr-FR', {
-        timeZone: appTimezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit'
-    });
+    return formatTimestamp(timestamp * 1000);
 }
 
 // Update data panel with candle and indicator data

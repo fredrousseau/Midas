@@ -43,7 +43,11 @@ document.addEventListener('DOMContentLoaded', () => {
         // Show/hide charts-only sidebar elements
         const isCharts = tabName === 'charts';
         chartsSidebarElements.forEach(el => {
-            if (el) el.style.display = isCharts ? '' : 'none';
+            if (!el) return;
+            if (isCharts)
+                el.classList.remove('hidden');
+            else
+                el.classList.add('hidden');
         });
 
         // Save active tab to localStorage

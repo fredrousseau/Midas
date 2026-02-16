@@ -1,1193 +1,1197 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MIDAS</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #0a0a0a 0%, #1a1a1a 100%);
-            color: #e0e0e0;
-            min-height: 100vh;
-            overflow: hidden;
-        }
-
-        .app-layout {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-        }
-
-        /* Sidebar */
-        .sidebar {
-            width: 320px;
-            min-width: 320px;
-            max-width: 320px;
-            background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
-            border-right: 1px solid #2a2a2a;
-            display: flex;
-            flex-direction: column;
-            transition: all 0.3s ease;
-            position: relative;
-            z-index: 100;
-            overflow: hidden;
-        }
-
-        .sidebar.collapsed {
-            width: 0;
-            min-width: 0;
-            max-width: 0;
-            border-right-width: 0;
-        }
-
-        .sidebar-header {
-            padding: 20px;
-            background: linear-gradient(135deg, #1e1e1e 0%, #252525 100%);
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .sidebar-title-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .sidebar-title {
-            font-size: 18px;
-            font-weight: 700;
-            color: #2962ff;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .logout-btn {
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 4px 8px;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 4px;
-        }
-
-        .logout-btn:hover {
-            border-color: #ef5350;
-            color: #ef5350;
-            background: rgba(239, 83, 80, 0.1);
-        }
-
-        /* Tab Navigation */
-        .tab-navigation {
-            display: flex;
-            gap: 8px;
-            margin-top: 15px;
-        }
-
-        .tab-btn {
-            flex: 1;
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 10px 12px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 6px;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .tab-btn:hover {
-            background: rgba(41, 98, 255, 0.1);
-            border-color: #2962ff;
-            color: #2962ff;
-        }
-
-        .tab-btn.active {
-            background: linear-gradient(135deg, #2962ff 0%, #1e53e5 100%);
-            border-color: #2962ff;
-            color: white;
-            box-shadow: 0 2px 8px rgba(41, 98, 255, 0.3);
-        }
-
-        .indicator-stats {
-            display: flex;
-            gap: 15px;
-            font-size: 11px;
-            color: #999;
-            margin-top: 10px;
-        }
-
-        .stat-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .stat-value {
-            color: #2962ff;
-            font-weight: 600;
-        }
-
-        .clear-all-btn {
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 6px 12px;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 4px;
-            margin-top: 10px;
-            width: 100%;
-        }
-
-        .clear-all-btn:hover {
-            border-color: #ef5350;
-            color: #ef5350;
-            background: rgba(239, 83, 80, 0.1);
-        }
-
-        .search-container {
-            padding: 10px 20px;
-            background: #1a1a1a;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .search-input {
-            width: 100%;
-            padding: 8px 12px;
-            background: #2a2a2a;
-            border: 1px solid #333;
-            border-radius: 4px;
-            color: #e0e0e0;
-            font-size: 12px;
-            outline: none;
-            transition: border-color 0.2s;
-        }
-
-        .search-input:focus {
-            border-color: #2962ff;
-        }
-
-        .search-input::placeholder {
-            color: #666;
-        }
-
-        /* Selected Indicators Section */
-        .selected-indicators-section {
-            background: #1a1a1a;
-            border-bottom: 1px solid #2a2a2a;
-            border-top: 1px solid #2a2a2a;
-            max-height: 300px;
-            overflow-y: auto;
-        }
-
-        .selected-indicators-header {
-            padding: 12px 20px;
-            background: linear-gradient(135deg, #252525 0%, #1e1e1e 100%);
-            position: sticky;
-            top: 0;
-            z-index: 10;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .section-title {
-            font-size: 11px;
-            font-weight: 700;
-            color: #2962ff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .selected-indicators-list {
-            padding: 5px 10px;
-        }
-
-        .selected-indicator-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px;
-            background: #1e1e1e;
-            border: 1px solid #2a2a2a;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            transition: all 0.2s;
-        }
-
-        .selected-indicator-item:hover {
-            background: #252525;
-            border-color: #2962ff;
-        }
-
-        .selected-indicator-color {
-            width: 12px;
-            height: 12px;
-            border-radius: 2px;
-            flex-shrink: 0;
-            cursor: pointer;
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            transition: all 0.2s;
-        }
-
-        .selected-indicator-color:hover {
-            transform: scale(1.2);
-            border-color: #fff;
-        }
-
-        .selected-indicator-name {
-            flex: 1;
-            font-size: 12px;
-            font-weight: 600;
-            color: #e0e0e0;
-        }
-
-        .selected-indicator-controls {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-        }
-
-        .selected-indicator-btn {
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 4px 8px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: all 0.2s;
-            line-height: 1;
-        }
-
-        .selected-indicator-btn:hover {
-            background: #2a2a2a;
-            border-color: #2962ff;
-            color: #2962ff;
-        }
-
-        .selected-indicator-btn.delete:hover {
-            border-color: #ef5350;
-            color: #ef5350;
-        }
-
-        .selected-indicator-btn.hidden-indicator {
-            opacity: 0.5;
-        }
-
-        .sidebar-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 10px;
-        }
-
-        .indicator-category {
-            margin-bottom: 8px;
-            border: 1px solid #2a2a2a;
-            border-radius: 6px;
-            background: #1e1e1e;
-            overflow: hidden;
-        }
-
-        .category-header {
-            padding: 12px 15px;
-            background: linear-gradient(135deg, #252525 0%, #1e1e1e 100%);
-            cursor: pointer;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.2s;
-            user-select: none;
-        }
-
-        .category-header:hover {
-            background: linear-gradient(135deg, #2a2a2a 0%, #232323 100%);
-        }
-
-        .category-name {
-            font-size: 12px;
-            font-weight: 600;
-            color: #2962ff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .category-arrow {
-            color: #666;
-            transition: transform 0.2s;
-            font-size: 12px;
-        }
-
-        .category-header.open .category-arrow {
-            transform: rotate(90deg);
-        }
-
-        .category-items {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.3s ease;
-        }
-
-        .category-items.open {
-            max-height: 500px;
-        }
-
-        .indicator-item {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 15px;
-            background: #1a1a1a;
-            border-bottom: 1px solid #252525;
-            font-size: 12px;
-            transition: all 0.15s ease;
-        }
-
-        .indicator-item:last-child {
-            border-bottom: none;
-        }
-
-        .indicator-item:hover {
-            background: #222;
-        }
-
-        .indicator-item input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            cursor: pointer;
-            accent-color: #2962ff;
-            flex-shrink: 0;
-        }
-
-        .indicator-item label {
-            cursor: pointer;
-            user-select: none;
-            flex: 1;
-            font-weight: 500;
-            color: #d1d4dc;
-        }
-
-        .indicator-item input[type="checkbox"]:checked + label {
-            color: #2962ff;
-        }
-
-        .loading-spinner {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid #333;
-            border-top-color: #2962ff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            flex-shrink: 0;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Toggle Button */
-        .sidebar-toggle {
-            position: fixed;
-            left: 320px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 32px;
-            height: 80px;
-            background: linear-gradient(135deg, #2962ff 0%, #1e53e5 100%);
-            border: none;
-            border-radius: 0 8px 8px 0;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 16px;
-            transition: all 0.3s ease;
-            z-index: 101;
-            box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .sidebar-toggle:hover {
-            background: linear-gradient(135deg, #1e53e5 0%, #1643c7 100%);
-            width: 36px;
-        }
-
-        .sidebar-toggle.sidebar-closed {
-            left: 0;
-        }
-
-        /* Main Content */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            position: relative;
-            transition: margin-right 0.3s ease;
-        }
-
-        .main-content.data-panel-open {
-            margin-right: 300px;
-        }
-
-        /* Tab Content */
-        .tab-content {
-            display: none;
-            flex: 1;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .tab-content.active {
-            display: flex;
-        }
-
-        /* Data Panel */
-        .data-panel {
-            position: fixed;
-            right: 0;
-            top: 0;
-            bottom: 0;
-            width: 300px;
-            background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
-            border-left: 1px solid #2a2a2a;
-            display: flex;
-            flex-direction: column;
-            transform: translateX(100%);
-            transition: transform 0.3s ease;
-            z-index: 150;
-            box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
-        }
-
-        .data-panel.open {
-            transform: translateX(0);
-        }
-
-        .data-panel-header {
-            padding: 15px 20px;
-            background: linear-gradient(135deg, #1e1e1e 0%, #252525 100%);
-            border-bottom: 1px solid #2a2a2a;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .data-panel-title {
-            font-size: 13px;
-            font-weight: 700;
-            color: #2962ff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .data-panel-close {
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 4px 8px;
-            font-size: 14px;
-            cursor: pointer;
-            border-radius: 3px;
-            transition: all 0.2s;
-        }
-
-        .data-panel-close:hover {
-            background: #2a2a2a;
-            border-color: #ef5350;
-            color: #ef5350;
-        }
-
-        .data-panel-content {
-            flex: 1;
-            overflow-y: auto;
-            padding: 15px 20px;
-        }
-
-        .data-section {
-            margin-bottom: 20px;
-        }
-
-        .data-section-title {
-            font-size: 11px;
-            font-weight: 700;
-            color: #2962ff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .data-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 0;
-            font-size: 12px;
-            border-bottom: 1px solid #252525;
-        }
-
-        .data-row:last-child {
-            border-bottom: none;
-        }
-
-        .data-label {
-            color: #999;
-            font-weight: 500;
-        }
-
-        .data-value {
-            color: #e0e0e0;
-            font-weight: 600;
-            font-family: 'Courier New', monospace;
-        }
-
-        .data-value.positive {
-            color: #26a69a;
-        }
-
-        .data-value.negative {
-            color: #ef5350;
-        }
-
-        .data-empty {
-            text-align: center;
-            padding: 20px;
-            color: #666;
-            font-size: 12px;
-            font-style: italic;
-        }
-
-        .controls {
-            background: linear-gradient(135deg, #1e1e1e 0%, #222 100%);
-            padding: 20px 30px;
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 15px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .control-group {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        label {
-            font-size: 11px;
-            color: #999;
-            text-transform: uppercase;
-            font-weight: 600;
-            letter-spacing: 0.5px;
-        }
-
-        input, select, button {
-            padding: 10px;
-            border-radius: 4px;
-            border: 1px solid #333;
-            background: #2a2a2a;
-            color: #e0e0e0;
-            font-size: 13px;
-        }
-
-        input:focus, select:focus {
-            outline: none;
-            border-color: #2962ff;
-        }
-
-        button {
-            background: #2962ff;
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background 0.2s;
-        }
-
-        button:hover {
-            background: #1e53e5;
-        }
-
-        button:disabled {
-            background: #444;
-            cursor: not-allowed;
-        }
-
-.webhook-result-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            padding: 20px 30px;
-            overflow: auto;
-        }
-
-        .webhook-result-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-
-        .webhook-result-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #fff;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .webhook-result-url {
-            font-size: 11px;
-            color: #666;
-            font-family: monospace;
-            max-width: 60%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .webhook-result {
-            flex: 1;
-            background: #1a1a1a;
-            border: 1px solid #2a2a2a;
-            border-radius: 8px;
-            padding: 20px;
-            color: #e0e0e0;
-            font-size: 13px;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            overflow: auto;
-            word-break: break-word;
-            margin: 0;
-            line-height: 1.6;
-        }
-
-        .webhook-result h1, .webhook-result h2, .webhook-result h3,
-        .webhook-result h4, .webhook-result h5, .webhook-result h6 {
-            color: #fff;
-            margin: 1em 0 0.4em;
-            line-height: 1.3;
-        }
-        .webhook-result h1 { font-size: 1.5em; }
-        .webhook-result h2 { font-size: 1.3em; }
-        .webhook-result h3 { font-size: 1.1em; }
-
-        .webhook-result p { margin: 0.5em 0; }
-
-        .webhook-result ul, .webhook-result ol {
-            padding-left: 1.5em;
-            margin: 0.5em 0;
-        }
-
-        .webhook-result li { margin: 0.2em 0; }
-
-        .webhook-result code {
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 0.1em 0.4em;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-            color: #e0b060;
-        }
-
-        .webhook-result pre {
-            background: #111;
-            border: 1px solid #2a2a2a;
-            border-radius: 6px;
-            padding: 14px;
-            overflow: auto;
-            margin: 0.8em 0;
-        }
-
-        .webhook-result pre code {
-            background: none;
-            border: none;
-            padding: 0;
-            color: #e0e0e0;
-            font-size: 12px;
-        }
-
-        .webhook-result blockquote {
-            border-left: 3px solid #444;
-            margin: 0.5em 0;
-            padding: 0.2em 1em;
-            color: #aaa;
-        }
-
-        .webhook-result hr {
-            border: none;
-            border-top: 1px solid #333;
-            margin: 1em 0;
-        }
-
-        .webhook-result a { color: #4a9eff; }
-
-        .webhook-result table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 0.8em 0;
-        }
-
-        .webhook-result th, .webhook-result td {
-            border: 1px solid #333;
-            padding: 6px 12px;
-            text-align: left;
-        }
-
-        .webhook-result th {
-            background: #222;
-            color: #fff;
-        }
-
-        .charts-container {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: auto;
-            padding: 20px 30px;
-            gap: 20px;
-        }
-
-        .chart-wrapper {
-            background: linear-gradient(135deg, #1a1a1a 0%, #222 100%);
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-            border: 1px solid #2a2a2a;
-        }
-
-        .chart-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-        }
-
-        .chart-title {
-            font-size: 14px;
-            font-weight: 600;
-            color: #fff;
-        }
-
-        .chart-info {
-            font-size: 11px;
-            color: #999;
-        }
-
-        .chart-container {
-            position: relative;
-        }
-
-        #mainChart {
-            height: 500px;
-        }
-
-        #indicatorChart {
-            height: 200px;
-        }
-
-        .status {
-            padding: 10px;
-            border-radius: 4px;
-            margin: 15px 30px;
-            text-align: center;
-            display: none;
-            font-size: 12px;
-        }
-
-        .status.success {
-            background: #1b5e20;
-            color: #a5d6a7;
-        }
-
-        .status.error {
-            background: #b71c1c;
-            color: #ef9a9a;
-        }
-
-        .status.loading {
-            background: #01579b;
-            color: #81d4fa;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-
-        .status-spinner {
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(129, 212, 250, 0.3);
-            border-top-color: #81d4fa;
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-            flex-shrink: 0;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .backtesting-info {
-            display: none;
-            background: linear-gradient(135deg, rgba(255, 107, 53, 0.2) 0%, rgba(247, 147, 30, 0.2) 100%);
-            border: 1px solid #ff6b35;
-            padding: 10px 15px;
-            border-radius: 6px;
-            margin: 15px 30px;
-            text-align: center;
-            font-size: 12px;
-            color: #ffb380;
-        }
-
-        .clear-date-btn {
-            background: transparent;
-            border: 1px solid #444;
-            color: #999;
-            padding: 8px;
-            font-size: 11px;
-            cursor: pointer;
-            transition: all 0.2s;
-            border-radius: 4px;
-            position: absolute;
-            right: 2px;
-            top: 50%;
-            transform: translateY(-50%);
-        }
-
-        .clear-date-btn:hover {
-            border-color: #ef5350;
-            color: #ef5350;
-            background: rgba(239, 83, 80, 0.1);
-        }
-
-        .control-group.with-clear {
-            position: relative;
-        }
-
-        .control-group.with-clear input {
-            padding-right: 35px;
-        }
-
-        .symbol-search-wrapper {
-            position: relative;
-        }
-
-        .symbol-suggestions {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            background: #1e1e1e;
-            border: 1px solid #444;
-            border-top: none;
-            border-radius: 0 0 4px 4px;
-            max-height: 240px;
-            overflow-y: auto;
-            z-index: 1000;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
-        }
-
-        .symbol-suggestion-item {
-            padding: 8px 10px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            border-bottom: 1px solid #2a2a2a;
-        }
-
-        .symbol-suggestion-item:last-child {
-            border-bottom: none;
-        }
-
-        .symbol-suggestion-item:hover,
-        .symbol-suggestion-item.active {
-            background: #2962ff22;
-        }
-
-        .suggestion-symbol {
-            font-weight: 600;
-            color: #e0e0e0;
-            font-size: 13px;
-            min-width: 80px;
-        }
-
-        .suggestion-name {
-            color: #999;
-            font-size: 12px;
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .suggestion-exchange {
-            color: #555;
-            font-size: 11px;
-        }
-
-        .suggestion-badge {
-            font-size: 10px;
-            padding: 2px 5px;
-            border-radius: 3px;
-            background: #333;
-            color: #888;
-        }
-
-        .suggestion-badge.yahoo  { background: #1a237e22; color: #5c6bc0; }
-        .suggestion-badge.binance { background: #f3a50022; color: #f3a500; }
-    </style>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>MIDAS</title>
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔱</text></svg>">
+	<style>
+		/* ── Design Tokens ─────────────────────────────────────────── */
+		:root {
+			--bg-primary: #0a0a0a;
+			--bg-secondary: #1a1a1a;
+			--bg-tertiary: #1e1e1e;
+			--bg-surface: #222;
+			--bg-elevated: #252525;
+			--bg-input: #2a2a2a;
+			--border-default: #2a2a2a;
+			--border-subtle: #252525;
+			--border-strong: #333;
+			--border-muted: #444;
+			--text-primary: #e0e0e0;
+			--text-secondary: #999;
+			--text-muted: #666;
+			--text-bright: #fff;
+			--text-code: #d1d4dc;
+			--accent: #2962ff;
+			--accent-hover: #1e53e5;
+			--accent-dark: #1643c7;
+			--accent-glow: rgba(41, 98, 255, 0.3);
+			--accent-subtle: rgba(41, 98, 255, 0.1);
+			--positive: #26a69a;
+			--negative: #ef5350;
+			--negative-subtle: rgba(239, 83, 80, 0.1);
+			--warning: #ff6b35;
+			--radius-sm: 3px;
+			--radius-md: 4px;
+			--radius-lg: 6px;
+			--radius-xl: 8px;
+			--radius-2xl: 12px;
+			--transition: 0.2s ease;
+			--transition-slow: 0.3s ease;
+			--sidebar-width: 320px;
+			--data-panel-width: 300px;
+			--font-mono: 'Courier New', monospace;
+			--font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+		}
+
+		/* ── Reset ─────────────────────────────────────────────────── */
+		* {
+			margin: 0;
+			padding: 0;
+			box-sizing: border-box;
+		}
+
+		body {
+			font-family: var(--font-sans);
+			background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+			color: var(--text-primary);
+			min-height: 100vh;
+			overflow: hidden;
+		}
+
+		/* ── Utilities ─────────────────────────────────────────────── */
+		.hidden { display: none !important; }
+		.full-width { grid-column: 1 / -1; }
+		.text-muted { color: var(--text-secondary); }
+
+		/* ── Layout ────────────────────────────────────────────────── */
+		.app-layout {
+			display: flex;
+			height: 100vh;
+			width: 100vw;
+		}
+
+		/* ── Sidebar ───────────────────────────────────────────────── */
+		.sidebar {
+			width: var(--sidebar-width);
+			min-width: var(--sidebar-width);
+			max-width: var(--sidebar-width);
+			background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-surface) 100%);
+			border-right: 1px solid var(--border-default);
+			display: flex;
+			flex-direction: column;
+			transition: all var(--transition-slow);
+			position: relative;
+			z-index: 100;
+			overflow: hidden;
+		}
+
+		.sidebar.collapsed {
+			width: 0;
+			min-width: 0;
+			max-width: 0;
+			border-right-width: 0;
+		}
+
+		.sidebar-header {
+			padding: 20px;
+			background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-elevated) 100%);
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.sidebar-title-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 10px;
+		}
+
+		.sidebar-title {
+			font-size: 18px;
+			font-weight: 700;
+			color: var(--accent);
+			text-transform: uppercase;
+			letter-spacing: 1px;
+		}
+
+		/* ── Shared button styles ──────────────────────────────────── */
+		.btn-ghost {
+			background: transparent;
+			border: 1px solid var(--border-muted);
+			color: var(--text-secondary);
+			cursor: pointer;
+			transition: all var(--transition);
+			border-radius: var(--radius-md);
+		}
+
+		.btn-ghost:hover {
+			background: var(--bg-input);
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+
+		.btn-ghost-danger:hover {
+			border-color: var(--negative);
+			color: var(--negative);
+			background: var(--negative-subtle);
+		}
+
+		.logout-btn {
+			padding: 4px 8px;
+			font-size: 11px;
+		}
+
+		/* ── Tab Navigation ────────────────────────────────────────── */
+		.tab-navigation {
+			display: flex;
+			gap: 8px;
+			margin-top: 15px;
+		}
+
+		.tab-btn {
+			flex: 1;
+			background: transparent;
+			border: 1px solid var(--border-muted);
+			color: var(--text-secondary);
+			padding: 10px 12px;
+			font-size: 12px;
+			cursor: pointer;
+			transition: all var(--transition);
+			border-radius: var(--radius-lg);
+			font-weight: 600;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.tab-btn:hover {
+			background: var(--accent-subtle);
+			border-color: var(--accent);
+			color: var(--accent);
+		}
+
+		.tab-btn.active {
+			background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+			border-color: var(--accent);
+			color: var(--text-bright);
+			box-shadow: 0 2px 8px var(--accent-glow);
+		}
+
+		.indicator-stats {
+			display: flex;
+			gap: 15px;
+			font-size: 11px;
+			color: var(--text-secondary);
+			margin-top: 10px;
+		}
+
+		.stat-item {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+		}
+
+		.stat-value {
+			color: var(--accent);
+			font-weight: 600;
+		}
+
+		.clear-all-btn {
+			padding: 6px 12px;
+			font-size: 11px;
+			margin-top: 10px;
+			width: 100%;
+		}
+
+		/* ── Search ────────────────────────────────────────────────── */
+		.search-container {
+			padding: 10px 20px;
+			background: var(--bg-secondary);
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.search-input {
+			width: 100%;
+			padding: 8px 12px;
+			background: var(--bg-input);
+			border: 1px solid var(--border-strong);
+			border-radius: var(--radius-md);
+			color: var(--text-primary);
+			font-size: 12px;
+			outline: none;
+			transition: border-color var(--transition);
+		}
+
+		.search-input:focus {
+			border-color: var(--accent);
+		}
+
+		.search-input::placeholder {
+			color: var(--text-muted);
+		}
+
+		/* ── Selected Indicators ───────────────────────────────────── */
+		.selected-indicators-section {
+			background: var(--bg-secondary);
+			border-bottom: 1px solid var(--border-default);
+			border-top: 1px solid var(--border-default);
+			max-height: 300px;
+			overflow-y: auto;
+		}
+
+		.selected-indicators-header {
+			padding: 12px 20px;
+			background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
+			position: sticky;
+			top: 0;
+			z-index: 10;
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.section-title {
+			font-size: 11px;
+			font-weight: 700;
+			color: var(--accent);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.selected-indicators-list {
+			padding: 5px 10px;
+		}
+
+		.selected-indicator-item {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 10px;
+			background: var(--bg-tertiary);
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-lg);
+			margin-bottom: 8px;
+			transition: all var(--transition);
+		}
+
+		.selected-indicator-item:hover {
+			background: var(--bg-elevated);
+			border-color: var(--accent);
+		}
+
+		.selected-indicator-color {
+			width: 12px;
+			height: 12px;
+			border-radius: 2px;
+			flex-shrink: 0;
+			cursor: pointer;
+			border: 1px solid rgba(255, 255, 255, 0.2);
+			transition: all var(--transition);
+		}
+
+		.selected-indicator-color:hover {
+			transform: scale(1.2);
+			border-color: var(--text-bright);
+		}
+
+		.selected-indicator-name {
+			flex: 1;
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--text-primary);
+		}
+
+		.selected-indicator-controls {
+			display: flex;
+			gap: 4px;
+			align-items: center;
+		}
+
+		.selected-indicator-btn {
+			padding: 4px 8px;
+			font-size: 14px;
+			line-height: 1;
+		}
+
+		.selected-indicator-btn.hidden-indicator {
+			opacity: 0.5;
+		}
+
+		/* ── Sidebar Content / Indicator Catalog ───────────────────── */
+		.sidebar-content {
+			flex: 1;
+			overflow-y: auto;
+			padding: 10px;
+		}
+
+		.indicator-category {
+			margin-bottom: 8px;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-lg);
+			background: var(--bg-tertiary);
+			overflow: hidden;
+		}
+
+		.category-header {
+			padding: 12px 15px;
+			background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-tertiary) 100%);
+			cursor: pointer;
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			transition: all var(--transition);
+			user-select: none;
+		}
+
+		.category-header:hover {
+			background: linear-gradient(135deg, var(--bg-input) 0%, #232323 100%);
+		}
+
+		.category-name {
+			font-size: 12px;
+			font-weight: 600;
+			color: var(--accent);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.category-arrow {
+			color: var(--text-muted);
+			transition: transform var(--transition);
+			font-size: 12px;
+		}
+
+		.category-header.open .category-arrow {
+			transform: rotate(90deg);
+		}
+
+		.category-items {
+			max-height: 0;
+			overflow: hidden;
+			transition: max-height var(--transition-slow);
+		}
+
+		.category-items.open {
+			max-height: 500px;
+		}
+
+		.indicator-item {
+			display: flex;
+			align-items: center;
+			gap: 10px;
+			padding: 10px 15px;
+			background: var(--bg-secondary);
+			border-bottom: 1px solid var(--border-subtle);
+			font-size: 12px;
+			transition: all 0.15s ease;
+		}
+
+		.indicator-item:last-child {
+			border-bottom: none;
+		}
+
+		.indicator-item:hover {
+			background: var(--bg-surface);
+		}
+
+		.indicator-item input[type="checkbox"] {
+			width: 16px;
+			height: 16px;
+			cursor: pointer;
+			accent-color: var(--accent);
+			flex-shrink: 0;
+		}
+
+		.indicator-item label {
+			cursor: pointer;
+			user-select: none;
+			flex: 1;
+			font-weight: 500;
+			color: var(--text-code);
+			font-size: 12px;
+			text-transform: none;
+			letter-spacing: normal;
+		}
+
+		.indicator-item input[type="checkbox"]:checked + label {
+			color: var(--accent);
+		}
+
+		/* ── Spinner ───────────────────────────────────────────────── */
+		@keyframes spin {
+			to { transform: rotate(360deg); }
+		}
+
+		.loading-spinner {
+			display: inline-block;
+			width: 12px;
+			height: 12px;
+			border: 2px solid var(--border-strong);
+			border-top-color: var(--accent);
+			border-radius: 50%;
+			animation: spin 0.8s linear infinite;
+			flex-shrink: 0;
+		}
+
+		/* ── Sidebar Toggle ────────────────────────────────────────── */
+		.sidebar-toggle {
+			position: fixed;
+			left: var(--sidebar-width);
+			top: 50%;
+			transform: translateY(-50%);
+			width: 32px;
+			height: 80px;
+			background: linear-gradient(135deg, var(--accent) 0%, var(--accent-hover) 100%);
+			border: none;
+			border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: var(--text-bright);
+			font-size: 16px;
+			transition: all var(--transition-slow);
+			z-index: 101;
+			box-shadow: 2px 0 8px rgba(0, 0, 0, 0.3);
+		}
+
+		.sidebar-toggle:hover {
+			background: linear-gradient(135deg, var(--accent-hover) 0%, var(--accent-dark) 100%);
+			width: 36px;
+		}
+
+		.sidebar-toggle.sidebar-closed {
+			left: 0;
+		}
+
+		/* ── Main Content ──────────────────────────────────────────── */
+		.main-content {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			overflow: hidden;
+			position: relative;
+			transition: margin-right var(--transition-slow);
+		}
+
+		.main-content.data-panel-open {
+			margin-right: var(--data-panel-width);
+		}
+
+		/* ── Tab Content ───────────────────────────────────────────── */
+		.tab-content {
+			display: none;
+			flex: 1;
+			flex-direction: column;
+			overflow: hidden;
+		}
+
+		.tab-content.active {
+			display: flex;
+		}
+
+		/* ── Data Panel ────────────────────────────────────────────── */
+		.data-panel {
+			position: fixed;
+			right: 0;
+			top: 0;
+			bottom: 0;
+			width: var(--data-panel-width);
+			background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-surface) 100%);
+			border-left: 1px solid var(--border-default);
+			display: flex;
+			flex-direction: column;
+			transform: translateX(100%);
+			transition: transform var(--transition-slow);
+			z-index: 150;
+			box-shadow: -2px 0 8px rgba(0, 0, 0, 0.3);
+		}
+
+		.data-panel.open {
+			transform: translateX(0);
+		}
+
+		.data-panel-header {
+			padding: 15px 20px;
+			background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-elevated) 100%);
+			border-bottom: 1px solid var(--border-default);
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+		}
+
+		.data-panel-title {
+			font-size: 13px;
+			font-weight: 700;
+			color: var(--accent);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.data-panel-close {
+			padding: 4px 8px;
+			font-size: 14px;
+		}
+
+		.data-panel-content {
+			flex: 1;
+			overflow-y: auto;
+			padding: 15px 20px;
+		}
+
+		.data-section {
+			margin-bottom: 20px;
+		}
+
+		.data-section-title {
+			font-size: 11px;
+			font-weight: 700;
+			color: var(--accent);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 10px;
+			padding-bottom: 5px;
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.data-row {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			padding: 6px 0;
+			font-size: 12px;
+			border-bottom: 1px solid var(--border-subtle);
+		}
+
+		.data-row:last-child {
+			border-bottom: none;
+		}
+
+		.data-label {
+			color: var(--text-secondary);
+			font-weight: 500;
+		}
+
+		.data-value {
+			color: var(--text-primary);
+			font-weight: 600;
+			font-family: var(--font-mono);
+		}
+
+		.data-value.positive {
+			color: var(--positive);
+		}
+
+		.data-value.negative {
+			color: var(--negative);
+		}
+
+		.data-empty {
+			text-align: center;
+			padding: 20px;
+			color: var(--text-muted);
+			font-size: 12px;
+			font-style: italic;
+		}
+
+		/* ── Controls Bar ──────────────────────────────────────────── */
+		.controls {
+			background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-surface) 100%);
+			padding: 20px 30px;
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+			gap: 15px;
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.control-group {
+			display: flex;
+			flex-direction: column;
+			gap: 8px;
+		}
+
+		.controls label {
+			font-size: 11px;
+			color: var(--text-secondary);
+			text-transform: uppercase;
+			font-weight: 600;
+			letter-spacing: 0.5px;
+		}
+
+		.controls input,
+		.controls select {
+			padding: 10px;
+			border-radius: var(--radius-md);
+			border: 1px solid var(--border-strong);
+			background: var(--bg-input);
+			color: var(--text-primary);
+			font-size: 13px;
+		}
+
+		.controls input:focus,
+		.controls select:focus {
+			outline: none;
+			border-color: var(--accent);
+		}
+
+		.controls button {
+			padding: 10px;
+			border-radius: var(--radius-md);
+			background: var(--accent);
+			border: none;
+			color: var(--text-primary);
+			font-size: 13px;
+			cursor: pointer;
+			font-weight: 600;
+			transition: background var(--transition);
+		}
+
+		.controls button:hover {
+			background: var(--accent-hover);
+		}
+
+		.controls button:disabled {
+			background: var(--border-muted);
+			cursor: not-allowed;
+		}
+
+		/* ── Webhook ───────────────────────────────────────────────── */
+		.webhook-result-container {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			padding: 20px 30px;
+			overflow: auto;
+		}
+
+		.webhook-result-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 10px;
+		}
+
+		.webhook-result-title {
+			font-size: 13px;
+			font-weight: 600;
+			color: var(--text-bright);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		.webhook-result-url {
+			font-size: 11px;
+			color: var(--text-muted);
+			font-family: monospace;
+			max-width: 60%;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.webhook-result {
+			flex: 1;
+			background: var(--bg-secondary);
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-xl);
+			padding: 20px;
+			color: var(--text-primary);
+			font-size: 13px;
+			font-family: var(--font-sans);
+			overflow: auto;
+			word-break: break-word;
+			margin: 0;
+			line-height: 1.6;
+		}
+
+		.webhook-result h1, .webhook-result h2, .webhook-result h3,
+		.webhook-result h4, .webhook-result h5, .webhook-result h6 {
+			color: var(--text-bright);
+			margin: 1em 0 0.4em;
+			line-height: 1.3;
+		}
+		.webhook-result h1 { font-size: 1.5em; }
+		.webhook-result h2 { font-size: 1.3em; }
+		.webhook-result h3 { font-size: 1.1em; }
+		.webhook-result p { margin: 0.5em 0; }
+
+		.webhook-result ul, .webhook-result ol {
+			padding-left: 1.5em;
+			margin: 0.5em 0;
+		}
+
+		.webhook-result li { margin: 0.2em 0; }
+
+		.webhook-result code {
+			background: var(--bg-input);
+			border: 1px solid #3a3a3a;
+			border-radius: var(--radius-md);
+			padding: 0.1em 0.4em;
+			font-family: var(--font-mono);
+			font-size: 0.9em;
+			color: #e0b060;
+		}
+
+		.webhook-result pre {
+			background: #111;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-lg);
+			padding: 14px;
+			overflow: auto;
+			margin: 0.8em 0;
+		}
+
+		.webhook-result pre code {
+			background: none;
+			border: none;
+			padding: 0;
+			color: var(--text-primary);
+			font-size: 12px;
+		}
+
+		.webhook-result blockquote {
+			border-left: 3px solid var(--border-muted);
+			margin: 0.5em 0;
+			padding: 0.2em 1em;
+			color: #aaa;
+		}
+
+		.webhook-result hr {
+			border: none;
+			border-top: 1px solid var(--border-strong);
+			margin: 1em 0;
+		}
+
+		.webhook-result a { color: #4a9eff; }
+
+		.webhook-result table {
+			border-collapse: collapse;
+			width: 100%;
+			margin: 0.8em 0;
+		}
+
+		.webhook-result th, .webhook-result td {
+			border: 1px solid var(--border-strong);
+			padding: 6px 12px;
+			text-align: left;
+		}
+
+		.webhook-result th {
+			background: var(--bg-surface);
+			color: var(--text-bright);
+		}
+
+		/* ── Charts ────────────────────────────────────────────────── */
+		.charts-container {
+			flex: 1;
+			display: flex;
+			flex-direction: column;
+			overflow: auto;
+			padding: 20px 30px;
+			gap: 20px;
+		}
+
+		.chart-wrapper {
+			background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-surface) 100%);
+			border-radius: var(--radius-2xl);
+			padding: 20px;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+			border: 1px solid var(--border-default);
+		}
+
+		.chart-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 15px;
+		}
+
+		.chart-title {
+			font-size: 14px;
+			font-weight: 600;
+			color: var(--text-bright);
+		}
+
+		.chart-info {
+			font-size: 11px;
+			color: var(--text-secondary);
+		}
+
+		.chart-container {
+			position: relative;
+		}
+
+		#mainChart {
+			height: 500px;
+		}
+
+		#indicatorChart {
+			height: 200px;
+		}
+
+		/* ── Status Bar ────────────────────────────────────────────── */
+		.status {
+			padding: 10px;
+			border-radius: var(--radius-md);
+			margin: 15px 30px;
+			text-align: center;
+			display: none;
+			font-size: 12px;
+		}
+
+		.status.success {
+			background: #1b5e20;
+			color: #a5d6a7;
+		}
+
+		.status.error {
+			background: #b71c1c;
+			color: #ef9a9a;
+		}
+
+		.status.loading {
+			background: #01579b;
+			color: #81d4fa;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			gap: 8px;
+		}
+
+		.status-spinner {
+			width: 14px;
+			height: 14px;
+			border: 2px solid rgba(129, 212, 250, 0.3);
+			border-top-color: #81d4fa;
+			border-radius: 50%;
+			animation: spin 0.7s linear infinite;
+			flex-shrink: 0;
+		}
+
+
+		.control-group.with-clear input {
+			padding-right: 35px;
+		}
+
+		/* ── Symbol Autocomplete ───────────────────────────────────── */
+		.symbol-search-wrapper {
+			position: relative;
+		}
+
+		.symbol-suggestions {
+			position: absolute;
+			top: 100%;
+			left: 0;
+			right: 0;
+			background: var(--bg-tertiary);
+			border: 1px solid var(--border-muted);
+			border-top: none;
+			border-radius: 0 0 var(--radius-md) var(--radius-md);
+			max-height: 240px;
+			overflow-y: auto;
+			z-index: 1000;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+		}
+
+		.symbol-suggestion-item {
+			padding: 8px 10px;
+			cursor: pointer;
+			display: flex;
+			align-items: center;
+			gap: 8px;
+			border-bottom: 1px solid var(--border-default);
+		}
+
+		.symbol-suggestion-item:last-child {
+			border-bottom: none;
+		}
+
+		.symbol-suggestion-item:hover,
+		.symbol-suggestion-item.active {
+			background: rgba(41, 98, 255, 0.13);
+		}
+
+		.suggestion-symbol {
+			font-weight: 600;
+			color: var(--text-primary);
+			font-size: 13px;
+			min-width: 80px;
+		}
+
+		.suggestion-name {
+			color: var(--text-secondary);
+			font-size: 12px;
+			flex: 1;
+			overflow: hidden;
+			text-overflow: ellipsis;
+			white-space: nowrap;
+		}
+
+		.suggestion-exchange {
+			color: #555;
+			font-size: 11px;
+		}
+
+		.suggestion-badge {
+			font-size: 10px;
+			padding: 2px 5px;
+			border-radius: var(--radius-sm);
+			background: var(--border-strong);
+			color: #888;
+		}
+
+		.suggestion-badge.yahoo  { background: rgba(26, 35, 126, 0.13); color: #5c6bc0; }
+		.suggestion-badge.binance { background: rgba(243, 165, 0, 0.13); color: #f3a500; }
+
+		/* ── Color Picker Popup ────────────────────────────────────── */
+		.color-picker-popup {
+			position: fixed;
+			z-index: 1000;
+			background: var(--bg-input);
+			border: 1px solid var(--border-muted);
+			border-radius: var(--radius-md);
+			padding: 8px;
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 6px;
+			box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+		}
+
+		.color-picker-option {
+			width: 24px;
+			height: 24px;
+			border-radius: var(--radius-sm);
+			cursor: pointer;
+			border: 2px solid transparent;
+			transition: all var(--transition);
+		}
+
+		.color-picker-option:hover {
+			border-color: var(--text-bright);
+			transform: scale(1.1);
+		}
+
+		/* ── Loading placeholder ───────────────────────────────────── */
+		.loading-placeholder {
+			text-align: center;
+			padding: 20px;
+			color: var(--text-secondary);
+			font-size: 12px;
+		}
+	</style>
 </head>
 <body>
-    <div class="app-layout">
-        <!-- Sidebar -->
-        <aside class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-title-row">
-                    <div class="sidebar-title">🔱 MIDAS</div>
-                    <button class="logout-btn" id="logoutBtn" style="display: none;">Se déconnecter</button>
-                </div>
+	<div class="app-layout">
+		<!-- Sidebar -->
+		<aside class="sidebar" id="sidebar">
+			<div class="sidebar-header">
+				<div class="sidebar-title-row">
+					<div class="sidebar-title">🔱 MIDAS</div>
+					<button class="btn-ghost btn-ghost-danger logout-btn hidden" id="logoutBtn">Se déconnecter</button>
+				</div>
 
-                <!-- Tab Navigation -->
-                <div class="tab-navigation">
-                    <button class="tab-btn active" data-tab="charts">
-                        📈 Graphiques
-                    </button>
-                    <button class="tab-btn" data-tab="webhook">
-                        🔗 Webhook
-                    </button>
-                </div>
+				<!-- Tab Navigation -->
+				<div class="tab-navigation">
+					<button class="tab-btn active" data-tab="charts">📈 Graphiques</button>
+					<button class="tab-btn" data-tab="webhook">🔗 Webhook</button>
+				</div>
 
-                <!-- Indicator Stats (only for charts tab) -->
-                <div id="indicatorStatsContainer" class="indicator-stats">
-                    <div class="stat-item">
-                        <span>Sélectionnés:</span>
-                        <span class="stat-value" id="selectedCount">0</span>
-                    </div>
-                    <div class="stat-item">
-                        <span>Total:</span>
-                        <span class="stat-value" id="totalCount">-</span>
-                    </div>
-                </div>
-                <button class="clear-all-btn" id="clearAllBtn" style="display: none;">Tout désélectionner</button>
-            </div>
+				<!-- Indicator Stats (only for charts tab) -->
+				<div id="indicatorStatsContainer" class="indicator-stats">
+					<div class="stat-item">
+						<span>Sélectionnés:</span>
+						<span class="stat-value" id="selectedCount">0</span>
+					</div>
+					<div class="stat-item">
+						<span>Total:</span>
+						<span class="stat-value" id="totalCount">-</span>
+					</div>
+				</div>
+				<button class="btn-ghost btn-ghost-danger clear-all-btn hidden" id="clearAllBtn">Tout désélectionner</button>
+			</div>
 
-            <!-- Search Container (charts only) -->
-            <div class="search-container" id="searchContainer">
-                <input type="text" class="search-input" id="indicatorSearch" placeholder="Rechercher un indicateur...">
-            </div>
+			<!-- Search Container (charts only) -->
+			<div class="search-container" id="searchContainer">
+				<input type="text" class="search-input" id="indicatorSearch" placeholder="Rechercher un indicateur...">
+			</div>
 
-            <!-- Selected Indicators Section (charts only) -->
-            <div class="selected-indicators-section" id="selectedIndicatorsSection" style="display: none;">
-                <div class="selected-indicators-header">
-                    <span class="section-title">Indicateurs Actifs</span>
-                </div>
-                <div class="selected-indicators-list" id="selectedIndicatorsList">
-                    <!-- Selected indicators will be added here dynamically -->
-                </div>
-            </div>
+			<!-- Selected Indicators Section (charts only) -->
+			<div class="selected-indicators-section hidden" id="selectedIndicatorsSection">
+				<div class="selected-indicators-header">
+					<span class="section-title">Indicateurs Actifs</span>
+				</div>
+				<div class="selected-indicators-list" id="selectedIndicatorsList"></div>
+			</div>
 
-            <!-- Sidebar Content (charts only) -->
-            <div class="sidebar-content" id="sidebarContent">
-                <div id="indicatorList">
-                    <div style="text-align: center; padding: 20px; color: #999; font-size: 12px;">
-                        Chargement du catalogue...
-                    </div>
-                </div>
-            </div>
-        </aside>
+			<!-- Sidebar Content (charts only) -->
+			<div class="sidebar-content" id="sidebarContent">
+				<div id="indicatorList">
+					<div class="loading-placeholder">Chargement du catalogue...</div>
+				</div>
+			</div>
+		</aside>
 
-        <!-- Toggle Button -->
-        <button class="sidebar-toggle" id="sidebarToggle">
-            ‹
-        </button>
+		<!-- Toggle Button -->
+		<button class="sidebar-toggle" id="sidebarToggle">‹</button>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Charts Tab -->
-            <div id="chartsTab" class="tab-content active">
-                <div id="status" class="status"></div>
+		<!-- Main Content -->
+		<main class="main-content">
+			<!-- Charts Tab -->
+			<div id="chartsTab" class="tab-content active">
+				<div id="status" class="status"></div>
 
-                <!-- Backtesting Info Banner -->
-                <div class="backtesting-info" id="backtestingInfo" style="display: none;">
-                    <strong>MODE BACKTESTING</strong> - Vous visualisez des données historiques au <span id="backtestingDate"></span>
-                    <button class="clear-date-btn" id="clearDateBtn" style="position: relative; transform: none; margin-left: 15px;">Retour au temps réel</button>
-                </div>
+				<div class="controls">
+					<div class="control-group symbol-search-wrapper">
+						<label for="symbol">Symbol</label>
+						<input type="text" id="symbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
+						<div id="symbol-suggestions" class="symbol-suggestions hidden"></div>
+					</div>
 
-                <div class="controls">
-                    <div class="control-group symbol-search-wrapper">
-                        <label for="symbol">Symbol</label>
-                        <input type="text" id="symbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
-                        <div id="symbol-suggestions" class="symbol-suggestions" style="display:none;"></div>
-                    </div>
+					<div class="control-group">
+						<label for="timeframe">Timeframe</label>
+						<select id="timeframe">
+							<option value="1m">1 minute</option>
+							<option value="5m">5 minutes</option>
+							<option value="15m">15 minutes</option>
+							<option value="1h" selected>1 heure</option>
+							<option value="4h">4 heures</option>
+							<option value="1d">1 jour</option>
+						</select>
+					</div>
 
-                    <div class="control-group">
-                        <label for="timeframe">Timeframe</label>
-                        <select id="timeframe">
-                            <option value="1m">1 minute</option>
-                            <option value="5m">5 minutes</option>
-                            <option value="15m">15 minutes</option>
-                            <option value="1h" selected>1 heure</option>
-                            <option value="4h">4 heures</option>
-                            <option value="1d">1 jour</option>
-                        </select>
-                    </div>
+					<div class="control-group">
+						<label for="bars">Nombre de barres</label>
+						<input type="number" id="bars" value="200" min="50" max="1000">
+					</div>
 
-                    <div class="control-group">
-                        <label for="bars">Nombre de barres</label>
-                        <input type="number" id="bars" value="200" min="50" max="1000">
-                    </div>
+					<div class="control-group">
+						<label>Actions</label>
+						<button id="loadBtn">Charger les données</button>
+					</div>
+				</div>
 
-                    <div class="control-group">
-                        <label for="referenceDate">Date d'analyse (backtesting)</label>
-                        <input type="datetime-local" id="referenceDate" placeholder="Laisser vide pour temps réel">
-                    </div>
+				<div class="charts-container">
+					<div class="chart-wrapper">
+						<div class="chart-header">
+							<div class="chart-title" id="chartTitle">Prix & Indicateurs</div>
+							<div class="chart-info" id="chartInfo"></div>
+						</div>
+						<div class="chart-container">
+							<div id="mainChart"></div>
+						</div>
+					</div>
 
-                    <div class="control-group">
-                        <label>Actions</label>
-                        <button id="loadBtn">Charger les données</button>
-                    </div>
-                </div>
+					<div class="chart-wrapper hidden" id="indicatorChartWrapper">
+						<div class="chart-header">
+							<div class="chart-title" id="indicatorTitle">Indicateurs</div>
+						</div>
+						<div class="chart-container">
+							<div id="indicatorChart"></div>
+						</div>
+					</div>
+				</div>
+			</div>
 
-                <div class="charts-container">
-                    <div class="chart-wrapper">
-                        <div class="chart-header">
-                            <div class="chart-title" id="chartTitle">Prix & Indicateurs</div>
-                            <div class="chart-info" id="chartInfo"></div>
-                        </div>
-                        <div class="chart-container">
-                            <div id="mainChart"></div>
-                        </div>
-                    </div>
+			<!-- Webhook Tab -->
+			<div id="webhookTab" class="tab-content">
+				<div id="webhookStatus" class="status"></div>
 
-                    <div class="chart-wrapper" id="indicatorChartWrapper" style="display: none;">
-                        <div class="chart-header">
-                            <div class="chart-title" id="indicatorTitle">Indicateurs</div>
-                        </div>
-                        <div class="chart-container">
-                            <div id="indicatorChart"></div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+				<div class="controls">
+					<div class="control-group full-width">
+						<label for="webhookUrl">URL du Webhook</label>
+						<input type="text" id="webhookUrl" value="https://n8n.skynet.ovh/webhook/fred" placeholder="https://example.com/webhook">
+					</div>
 
-            <!-- Webhook Tab -->
-            <div id="webhookTab" class="tab-content">
-                <div id="webhookStatus" class="status"></div>
+					<div class="control-group symbol-search-wrapper">
+						<label for="webhookSymbol">Symbol</label>
+						<input type="text" id="webhookSymbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
+						<div id="webhookSymbol-suggestions" class="symbol-suggestions hidden"></div>
+					</div>
 
-                <div class="controls">
-                    <div class="control-group" style="grid-column: 1 / -1;">
-                        <label for="webhookUrl">URL du Webhook</label>
-                        <input type="text" id="webhookUrl" value="https://n8n.skynet.ovh/webhook/fred" placeholder="https://example.com/webhook">
-                    </div>
+					<div class="control-group">
+						<label for="webhookReferenceDate">Date d'analyse</label>
+						<input type="datetime-local" id="webhookReferenceDate" placeholder="Laisser vide pour temps réel">
+					</div>
 
-                    <div class="control-group symbol-search-wrapper">
-                        <label for="webhookSymbol">Symbol</label>
-                        <input type="text" id="webhookSymbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
-                        <div id="webhookSymbol-suggestions" class="symbol-suggestions" style="display:none;"></div>
-                    </div>
+					<div class="control-group">
+						<label for="webhookLong">Long Timeframe</label>
+						<select id="webhookLong">
+							<option value="1w">1 semaine</option>
+							<option value="1d" selected>1 jour</option>
+							<option value="12h">12 heures</option>
+						</select>
+					</div>
 
-                    <div class="control-group">
-                        <label for="webhookReferenceDate">Date d'analyse</label>
-                        <input type="datetime-local" id="webhookReferenceDate" placeholder="Laisser vide pour temps réel">
-                    </div>
+					<div class="control-group">
+						<label for="webhookMedium">Medium Timeframe</label>
+						<select id="webhookMedium">
+							<option value="12h">12 heures</option>
+							<option value="4h" selected>4 heures</option>
+							<option value="1h">1 heure</option>
+						</select>
+					</div>
 
-                    <div class="control-group">
-                        <label for="webhookLong">Long Timeframe</label>
-                        <select id="webhookLong">
-                            <option value="1w">1 semaine</option>
-                            <option value="1d" selected>1 jour</option>
-                            <option value="12h">12 heures</option>
-                        </select>
-                    </div>
+					<div class="control-group">
+						<label for="webhookShort">Short Timeframe</label>
+						<select id="webhookShort">
+							<option value="1h" selected>1 heure</option>
+							<option value="15m">15 minutes</option>
+							<option value="5m">5 minutes</option>
+							<option value="1m">1 minute</option>
+						</select>
+					</div>
 
-                    <div class="control-group">
-                        <label for="webhookMedium">Medium Timeframe</label>
-                        <select id="webhookMedium">
-                            <option value="12h">12 heures</option>
-                            <option value="4h" selected>4 heures</option>
-                            <option value="1h">1 heure</option>
-                        </select>
-                    </div>
+					<div class="control-group">
+						<label>Action</label>
+						<button id="webhookCallBtn">Appeler le Webhook</button>
+					</div>
+				</div>
 
-                    <div class="control-group">
-                        <label for="webhookShort">Short Timeframe</label>
-                        <select id="webhookShort">
-                            <option value="1h" selected>1 heure</option>
-                            <option value="15m">15 minutes</option>
-                            <option value="5m">5 minutes</option>
-                            <option value="1m">1 minute</option>
-                        </select>
-                    </div>
+				<div class="webhook-result-container">
+					<div class="webhook-result-header">
+						<span class="webhook-result-title">Reponse</span>
+						<span class="webhook-result-url" id="webhookResultUrl"></span>
+					</div>
+					<div class="webhook-result" id="webhookResult"><span class="text-muted">Aucun appel effectue</span></div>
+				</div>
+			</div>
 
-                    <div class="control-group">
-                        <label>Action</label>
-                        <button id="webhookCallBtn">Appeler le Webhook</button>
-                    </div>
-                </div>
+		</main>
 
-                <div class="webhook-result-container">
-                    <div class="webhook-result-header">
-                        <span class="webhook-result-title">Reponse</span>
-                        <span class="webhook-result-url" id="webhookResultUrl"></span>
-                    </div>
-                    <div class="webhook-result" id="webhookResult"><span style="color: #999;">Aucun appel effectue</span></div>
-                </div>
-            </div>
+		<!-- Data Panel (charts only) -->
+		<aside class="data-panel" id="dataPanel">
+			<div class="data-panel-header">
+				<div class="data-panel-title">Données</div>
+				<button class="btn-ghost btn-ghost-danger data-panel-close" id="dataPanelClose">✕</button>
+			</div>
+			<div class="data-panel-content" id="dataPanelContent">
+				<div class="data-empty">Cliquez sur une bougie pour voir les détails</div>
+			</div>
+		</aside>
+	</div>
 
-        </main>
+	<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" onload="window.lightweightChartsLoaded = true;"></script>
+	<script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
+	<script type="module" src="auth-client.js"></script>
+	<script src="indicators-ui.js"></script>
+	<script src="data-panel.js"></script>
+	<script src="app.js"></script>
+	<script src="tab-manager.js"></script>
+	<script>
+		document.addEventListener('DOMContentLoaded', () => {
+			sessionStorage.removeItem('login_redirect_attempted');
 
-        <!-- Data Panel (charts only) -->
-        <aside class="data-panel" id="dataPanel">
-            <div class="data-panel-header">
-                <div class="data-panel-title">Données</div>
-                <button class="data-panel-close" id="dataPanelClose">✕</button>
-            </div>
-            <div class="data-panel-content" id="dataPanelContent">
-                <div class="data-empty">Cliquez sur une bougie pour voir les détails</div>
-            </div>
-        </aside>
-    </div>
+			const logoutBtn = document.getElementById('logoutBtn');
 
-    <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js" onload="window.lightweightChartsLoaded = true;"></script>
-    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
-    <script type="module" src="auth-client.js"></script>
-    <script src="indicators-ui.js"></script>
-    <script src="data-panel.js"></script>
-    <script src="app.js"></script>
-    <script src="tab-manager.js"></script>
-    <script>
-        // Setup logout button
-        document.addEventListener('DOMContentLoaded', () => {
-            // Clear login redirect flag - we successfully loaded the page
-            sessionStorage.removeItem('login_redirect_attempted');
+			if (window.authClient && window.authClient.isAuthenticated()) {
+				logoutBtn.classList.remove('hidden');
 
-            const logoutBtn = document.getElementById('logoutBtn');
-
-            // Show logout button if auth is enabled and user is authenticated
-            if (window.authClient && window.authClient.isAuthenticated()) {
-                logoutBtn.style.display = 'block';
-
-                logoutBtn.addEventListener('click', async () => {
-                    if (confirm('Voulez-vous vraiment vous déconnecter ?')) {
-                        await window.authClient.logout();
-                        window.location.href = '/login.html';
-                    }
-                });
-            }
-        });
-    </script>
+				logoutBtn.addEventListener('click', async () => {
+					if (confirm('Voulez-vous vraiment vous déconnecter ?')) {
+						await window.authClient.logout();
+						window.location.href = '/login.html';
+					}
+				});
+			}
+		});
+	</script>
 </body>
 </html>
