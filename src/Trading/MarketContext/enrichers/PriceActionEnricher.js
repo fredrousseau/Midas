@@ -18,6 +18,10 @@ export class PriceActionEnricher {
 		const bars = ohlcvData.bars;
 		const currentBar = bars[bars.length - 1];
 
+		// Calculate average range for adaptive thresholds
+		const recentRanges = bars.slice(-STATISTICAL_PERIODS.short).map(b => b.high - b.low).filter(r => r > 0);
+		this._avgRange = recentRanges.length > 0 ? recentRanges.reduce((a, b) => a + b, 0) / recentRanges.length : 0;
+
 		return {
 			current: currentPrice,
 			open: currentBar.open,
@@ -25,7 +29,7 @@ export class PriceActionEnricher {
 			low: currentBar.low,
 
 			// Bar analysis
-			bar_type: this._getBarType(currentBar),
+			bar_type: this._getBarType(currentBar, bars.length >= 2 ? bars[bars.length - 2] : null),
 			body_to_range: this._getBodyToRange(currentBar),
 
 			// Wick analysis
@@ -54,30 +58,41 @@ export class PriceActionEnricher {
 	/**
 	 * Get bar type
 	 */
-	_getBarType(bar) {
+	_getBarType(bar, previousBar) {
 		const { open, high, low, close } = bar;
 		const body = Math.abs(close - open);
 		const range = high - low;
-		
+
 		if (range === 0) return 'flat';
-		
+
 		const bodyRatio = body / range;
-		
-		// Doji
-		if (bodyRatio < 0.1) return 'doji';
-		
+
+		// Doji: adaptive threshold based on recent average range
+		// Small range bars (< 30% of avg) with tiny body = doji in low-vol context
+		// Normal range bars need bodyRatio < 10% to qualify
+		const rangeRatio = this._avgRange > 0 ? range / this._avgRange : 1;
+		const dojiThreshold = rangeRatio < 0.3 ? 0.2 : 0.1;
+		if (bodyRatio < dojiThreshold) return 'doji';
+
 		// Strong directional
 		if (bodyRatio > 0.7) {
 			if (close > open) return 'strong bullish';
 			return 'strong bearish';
 		}
-		
-		// Engulfing check (needs previous bar, simplified here)
-		if (bodyRatio > 0.6) {
-			if (close > open) return 'bullish engulfing';
-			return 'bearish engulfing';
+
+		// Engulfing: current body must engulf previous body
+		if (previousBar && bodyRatio > 0.5) {
+			const prevBody = Math.abs(previousBar.close - previousBar.open);
+			if (prevBody > 0) {
+				// Bullish engulfing: prev was bearish, current opens below prev close and closes above prev open
+				if (previousBar.close < previousBar.open && close > open && open <= previousBar.close && close >= previousBar.open)
+					return 'bullish engulfing';
+				// Bearish engulfing: prev was bullish, current opens above prev close and closes below prev open
+				if (previousBar.close > previousBar.open && close < open && open >= previousBar.close && close <= previousBar.open)
+					return 'bearish engulfing';
+			}
 		}
-		
+
 		// Regular
 		if (close > open) return 'bullish';
 		if (close < open) return 'bearish';
@@ -188,14 +203,17 @@ export class PriceActionEnricher {
 		const current = bars[bars.length - 1];
 		const previous = bars[bars.length - 2];
 
-		// Doji
-		const bodyRatio = Math.abs(current.close - current.open) / (current.high - current.low);
-		if (bodyRatio < 0.1 && (current.high - current.low) > 0) 
+		// Doji (adaptive threshold based on average range)
+		const currentRange = current.high - current.low;
+		const bodyRatio = currentRange > 0 ? Math.abs(current.close - current.open) / currentRange : 0;
+		const rangeRatio = this._avgRange > 0 ? currentRange / this._avgRange : 1;
+		const dojiThreshold = rangeRatio < 0.3 ? 0.2 : 0.1;
+		if (bodyRatio < dojiThreshold && currentRange > 0)
 			patterns.push({
 				name: 'doji',
 				bars_ago: 0,
-				reliability: 'medium',
-				context: 'indecision'
+				reliability: rangeRatio < 0.3 ? 'low' : 'medium',
+				context: rangeRatio < 0.3 ? 'indecision in low-volatility context' : 'indecision'
 			});
 
 		// Engulfing

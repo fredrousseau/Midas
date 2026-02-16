@@ -18,9 +18,11 @@ export class VolumeEnricher {
 	async enrich({ ohlcvData, indicatorService, symbol, timeframe, referenceDate }) {
 		const bars = ohlcvData.bars;
 
-		// Get indicator series
-		const obvSeries = await this._getIndicatorSafe(indicatorService, symbol, 'obv', timeframe, referenceDate);
-		const vwapSeries = await this._getIndicatorSafe(indicatorService, symbol, 'vwap', timeframe, referenceDate);
+		// Get indicator series (in parallel)
+		const [obvSeries, vwapSeries] = await Promise.all([
+			this._getIndicatorSafe(indicatorService, symbol, 'obv', timeframe, referenceDate),
+			this._getIndicatorSafe(indicatorService, symbol, 'vwap', timeframe, referenceDate),
+		]);
 
 		return {
 			volume: this._enrichVolume(bars),
@@ -56,29 +58,36 @@ export class VolumeEnricher {
 	}
 
 	/**
-	 * Enrich basic volume
+	 * Enrich basic volume using z-score for distribution-aware anomaly detection
 	 */
 	_enrichVolume(bars) {
 		const volumes = bars.map(b => b.volume);
 		const currentVolume = volumes[volumes.length - 1];
 
-		// Calculate average
-		const avg20 = this._mean(volumes.slice(-VOLUME_PERIODS.average));
+		// Calculate average and standard deviation over lookback window
+		const lookbackVolumes = volumes.slice(-STATISTICAL_PERIODS.medium);
+		const avg = this._mean(lookbackVolumes);
+		const stdDev = this._stdDev(lookbackVolumes);
 
-		// Volume ratio
-		const ratio = currentVolume / avg20;
+		// Z-score: how many std deviations from mean (distribution-aware)
+		const zScore = stdDev > 0 ? (currentVolume - avg) / stdDev : 0;
 
-		// Interpretation
+		// Simple ratio for display
+		const ratio = avg > 0 ? currentVolume / avg : 0;
+
+		// Z-score based interpretation (adapts to the asset's typical distribution)
 		let interpretation;
-		if (ratio > 2.0) 
-			interpretation = 'very high volume (climax or news)';
-		 else if (ratio > 1.5) 
-			interpretation = 'high volume (above average)';
-		 else if (ratio > 1.2) 
-			interpretation = 'good participation';
-		 else if (ratio < 0.7) 
-			interpretation = 'low volume (indecision)';
-		 else 
+		if (zScore > 3.0)
+			interpretation = 'extreme volume anomaly (>3σ — climax or news event)';
+		else if (zScore > 2.0)
+			interpretation = 'very high volume (>2σ — significant institutional activity)';
+		else if (zScore > 1.0)
+			interpretation = 'above average volume (>1σ — good participation)';
+		else if (zScore < -1.5)
+			interpretation = 'unusually low volume (<-1.5σ — indecision/holiday)';
+		else if (zScore < -0.5)
+			interpretation = 'below average volume';
+		else
 			interpretation = 'normal volume';
 
 		// Recent bars analysis
@@ -86,14 +95,15 @@ export class VolumeEnricher {
 
 		// Context
 		let context = null;
-		if (ratio < 0.7) 
-			context = 'typical during consolidation';
-		 else if (ratio > 1.5) 
-			context = 'strong conviction move';
+		if (zScore > 2.0)
+			context = 'volume spike — watch for reversal or continuation confirmation';
+		else if (zScore < -1.5)
+			context = 'volume drought — typical during consolidation, breakout may follow';
 
 		return {
 			current: round(currentVolume, 0),
-			vs_avg_20: `${ratio > 1 ? '+' : ''}${round((ratio - 1) * 100, 0)}% (${ratio > 1 ? 'above' : 'below'} average)`,
+			vs_avg_50: `${ratio > 1 ? '+' : ''}${round((ratio - 1) * 100, 0)}% (${ratio > 1 ? 'above' : 'below'} average)`,
+			z_score: round(zScore, 2),
 			interpretation,
 			recent_bars: recentBars,
 			context
@@ -267,6 +277,15 @@ export class VolumeEnricher {
 	 */
 	_mean(values) {
 		return values.reduce((a, b) => a + b, 0) / values.length;
+	}
+
+	/**
+	 * Calculate standard deviation
+	 */
+	_stdDev(values) {
+		const mean = this._mean(values);
+		const variance = values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length;
+		return Math.sqrt(variance);
 	}
 }
 

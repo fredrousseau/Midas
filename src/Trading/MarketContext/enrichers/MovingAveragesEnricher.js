@@ -38,45 +38,41 @@ export class MovingAveragesEnricher {
 	 * @param {string} referenceDate - Optional analysis date for historical analysis
 	 */
 	async enrich({ _ohlcvData, indicatorService, symbol, timeframe, currentPrice, referenceDate }) {
-		// ✅ Get EMAs from EXISTING calculations via indicatorService
-		const emas = {};
-		for (const period of this.emaPeriods) {
+		// Get all EMAs and SMAs in parallel
+		const emaPromises = this.emaPeriods.map(period => {
 			const bars = this._getAdaptiveBarCount(timeframe, period === 200);
-			const series = await indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator: 'ema',
-				timeframe,
-				bars,
-				referenceDate,
-				config: { period },
-			});
+			return indicatorService.getIndicatorTimeSeries({
+				symbol, indicator: 'ema', timeframe, bars, referenceDate, config: { period },
+			}).then(series => ({ period, series }));
+		});
 
+		const smaPromises = this.smaPeriods.map(period => {
+			const bars = this._getAdaptiveBarCount(timeframe);
+			return indicatorService.getIndicatorTimeSeries({
+				symbol, indicator: 'sma', timeframe, bars, referenceDate, config: { period },
+			}).then(series => ({ period, series }));
+		});
+
+		const [emaResults, smaResults] = await Promise.all([
+			Promise.all(emaPromises),
+			Promise.all(smaPromises),
+		]);
+
+		const emas = {};
+		for (const { period, series } of emaResults)
 			if (series && series.data && series.data.length > 0)
 				emas[period] = {
 					current: series.data[series.data.length - 1].value,
 					history: series.data.map((d) => d.value),
 				};
-		}
 
-		// ✅ Get SMAs from EXISTING calculations via indicatorService
 		const smas = {};
-		for (const period of this.smaPeriods) {
-			const bars = this._getAdaptiveBarCount(timeframe);
-			const series = await indicatorService.getIndicatorTimeSeries({
-				symbol,
-				indicator: 'sma',
-				timeframe,
-				bars,
-				referenceDate,
-				config: { period },
-			});
-
+		for (const { period, series } of smaResults)
 			if (series && series.data && series.data.length > 0)
 				smas[period] = {
 					current: series.data[series.data.length - 1].value,
 					history: series.data.map((d) => d.value),
 				};
-		}
 
 		// Build enriched context (same as before, but with existing calculations)
 		return {
@@ -220,16 +216,17 @@ export class MovingAveragesEnricher {
 		const recent26 = ema26.slice(-STATISTICAL_PERIODS.short);
 		const recent50 = ema50.slice(-STATISTICAL_PERIODS.short);
 
-		// Calculate slopes
-		const slope12 = this._getSimpleSlope(recent12);
-		const slope26 = this._getSimpleSlope(recent26);
-		const slope50 = this._getSimpleSlope(recent50);
+		// Calculate slopes normalized as percentage per bar
+		const avgPrice = recent12[recent12.length - 1] || 1;
+		const slope12 = this._getSimpleSlope(recent12) / avgPrice;
+		const slope26 = this._getSimpleSlope(recent26) / avgPrice;
+		const slope50 = this._getSimpleSlope(recent50) / avgPrice;
 
-		// Check if slopes are similar (parallel)
+		// Check if slopes are similar (parallel) — threshold is 0.05% per bar
 		const diff12_26 = Math.abs(slope12 - slope26);
 		const diff26_50 = Math.abs(slope26 - slope50);
 
-		if (diff12_26 < 0.001 && diff26_50 < 0.001) return 'parallel (healthy trend)';
+		if (diff12_26 < 0.0005 && diff26_50 < 0.0005) return 'parallel (healthy trend)';
 
 		// Expanding (EMAs diverging)
 		if (slope12 > slope26 && slope26 > slope50) return 'expanding (strengthening)';

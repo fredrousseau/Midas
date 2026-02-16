@@ -20,10 +20,12 @@ export class MomentumEnricher {
 		const _highs = ohlcvData.bars.map(b => b.high);
 		const _lows = ohlcvData.bars.map(b => b.low);
 
-		// Get indicator series from IndicatorService
-		const rsiSeries = await this._getIndicatorSafe(indicatorService, symbol, 'rsi', timeframe, referenceDate);
-		const macdSeries = await this._getIndicatorSafe(indicatorService, symbol, 'macd', timeframe, referenceDate);
-		const stochSeries = await this._getIndicatorSafe(indicatorService, symbol, 'stochastic', timeframe, referenceDate);
+		// Get indicator series from IndicatorService (in parallel)
+		const [rsiSeries, macdSeries, stochSeries] = await Promise.all([
+			this._getIndicatorSafe(indicatorService, symbol, 'rsi', timeframe, referenceDate),
+			this._getIndicatorSafe(indicatorService, symbol, 'macd', timeframe, referenceDate),
+			this._getIndicatorSafe(indicatorService, symbol, 'stochastic', timeframe, referenceDate),
+		]);
 
 		return {
 			rsi: rsiSeries ? this._enrichRSI(rsiSeries, closes, higherTimeframeData) : null,
@@ -76,8 +78,8 @@ export class MomentumEnricher {
 		// Detect trend
 		const trend = this._detectTrend(rsiValues.slice(-TREND_PERIODS.short));
 
-		// Detect divergence with price
-		const divergence = this._detectRSIDivergence(rsiValues.slice(-TREND_PERIODS.medium), closes.slice(-TREND_PERIODS.medium));
+		// Detect divergence with price (use medium window for peak-finding)
+		const divergence = this._detectRSIDivergence(rsiValues.slice(-STATISTICAL_PERIODS.medium), closes.slice(-STATISTICAL_PERIODS.medium));
 
 		// Compare with higher timeframe
 		let vs_htf = null;
@@ -282,25 +284,34 @@ export class MomentumEnricher {
 	}
 
 	/**
-	 * Detect RSI divergence with price
+	 * Detect RSI divergence with price using both peaks (bearish) and troughs (bullish)
 	 */
 	_detectRSIDivergence(rsiValues, priceValues) {
-		if (rsiValues.length < 10 || priceValues.length < 10) 
+		if (rsiValues.length < 10 || priceValues.length < 10)
 			return 'none';
 
-		// Find recent peaks
-		const rsiPeaks = this._findPeaks(rsiValues.slice(-TREND_PERIODS.short));
-		const pricePeaks = this._findPeaks(priceValues.slice(-TREND_PERIODS.short));
+		// Bearish divergence: compare peaks (highs)
+		const rsiPeaks = this._findPeaks(rsiValues);
+		const pricePeaks = this._findPeaks(priceValues);
 
 		if (rsiPeaks.length >= 2 && pricePeaks.length >= 2) {
 			const rsiTrend = rsiPeaks[rsiPeaks.length - 1] - rsiPeaks[rsiPeaks.length - 2];
 			const priceTrend = pricePeaks[pricePeaks.length - 1] - pricePeaks[pricePeaks.length - 2];
 
-			if (rsiTrend < 0 && priceTrend > 0) 
-				return 'bearish divergence (price up, RSI down)';
-			 else if (rsiTrend > 0 && priceTrend < 0) 
-				return 'bullish divergence (price down, RSI up)';
-			
+			if (rsiTrend < 0 && priceTrend > 0)
+				return 'bearish divergence (price higher high, RSI lower high)';
+		}
+
+		// Bullish divergence: compare troughs (lows)
+		const rsiTroughs = this._findTroughs(rsiValues);
+		const priceTroughs = this._findTroughs(priceValues);
+
+		if (rsiTroughs.length >= 2 && priceTroughs.length >= 2) {
+			const rsiTrend = rsiTroughs[rsiTroughs.length - 1] - rsiTroughs[rsiTroughs.length - 2];
+			const priceTrend = priceTroughs[priceTroughs.length - 1] - priceTroughs[priceTroughs.length - 2];
+
+			if (rsiTrend > 0 && priceTrend < 0)
+				return 'bullish divergence (price lower low, RSI higher low)';
 		}
 
 		return 'none (price and RSI aligned)';
@@ -377,15 +388,27 @@ export class MomentumEnricher {
 	}
 
 	/**
-	 * Find peaks in array
+	 * Find peaks (local maxima) in array
 	 */
 	_findPeaks(values) {
 		const peaks = [];
-		for (let i = 1; i < values.length - 1; i++) 
-			if (values[i] > values[i - 1] && values[i] > values[i + 1]) 
+		for (let i = 1; i < values.length - 1; i++)
+			if (values[i] > values[i - 1] && values[i] > values[i + 1])
 				peaks.push(values[i]);
-		
+
 		return peaks;
+	}
+
+	/**
+	 * Find troughs (local minima) in array
+	 */
+	_findTroughs(values) {
+		const troughs = [];
+		for (let i = 1; i < values.length - 1; i++)
+			if (values[i] < values[i - 1] && values[i] < values[i + 1])
+				troughs.push(values[i]);
+
+		return troughs;
 	}
 
 	/**

@@ -338,7 +338,9 @@ export class PatternDetector {
 	 * Three peaks with middle highest and equal shoulders
 	 */
 	_detectHeadAndShoulders(bars, atr) {
-		const swings = this._findSwings(bars.slice(-PATTERN_PERIODS.headShouldersSwingBars), atr, PATTERN_ATR_MULTIPLIERS.significantSwing);
+		const recentBars = bars.slice(-PATTERN_PERIODS.headShouldersSwingBars);
+		const offset = bars.length - recentBars.length;
+		const swings = this._findSwings(recentBars, atr, PATTERN_ATR_MULTIPLIERS.significantSwing);
 		const highs = swings.filter(s => s.type === 'high');
 
 		if (highs.length < 3) return null;
@@ -348,12 +350,19 @@ export class PatternDetector {
 		// Head must be higher than both shoulders
 		if (H.price <= L.price || H.price <= R.price) return null;
 
-		// Shoulders must be roughly equal (within 5%)
-		if (Math.abs(L.price - R.price) / L.price > 0.05) return null;
+		// Shoulders must be roughly equal — threshold adapts to volatility
+		// Base: 5% for low-vol, up to 10% for high-vol (scaled by ATR/price)
+		const avgShoulderPrice = (L.price + R.price) / 2;
+		const atrPct = atr / avgShoulderPrice;
+		const symmetryThreshold = Math.min(0.10, Math.max(0.03, atrPct * 3));
+		if (Math.abs(L.price - R.price) / L.price > symmetryThreshold) return null;
 
 		// Find neckline (support between shoulders)
+		// Adjust indices to match original bars array
+		const startIdx = L.index + offset;
+		const endIdx = R.index + offset;
 		const neckline = Math.min(
-			...bars.slice(L.index, R.index).map(b => b.low)
+			...bars.slice(startIdx, endIdx + 1).map(b => b.low)
 		);
 
 		return {

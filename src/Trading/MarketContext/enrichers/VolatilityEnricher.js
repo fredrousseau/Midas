@@ -43,15 +43,18 @@ export class VolatilityEnricher {
 	 * Enrich volatility indicators
 	 */
 	async enrich({ ohlcvData, indicatorService, symbol, timeframe, currentPrice, higherTimeframeData, referenceDate }) {
-		// Get indicator series
-		const atrSeries = await this._getIndicatorSafe(indicatorService, symbol, 'atr', timeframe, referenceDate);
-		const bbSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bb', timeframe, referenceDate);
-		const bbWidthSeries = await this._getIndicatorSafe(indicatorService, symbol, 'bbWidth', timeframe, referenceDate);
+		// Get indicator series (in parallel)
+		const [atrSeries, bbSeries, bbWidthSeries] = await Promise.all([
+			this._getIndicatorSafe(indicatorService, symbol, 'atr', timeframe, referenceDate),
+			this._getIndicatorSafe(indicatorService, symbol, 'bb', timeframe, referenceDate),
+			this._getIndicatorSafe(indicatorService, symbol, 'bbWidth', timeframe, referenceDate),
+		]);
 
 		return {
 			atr: atrSeries ? this._enrichATR(atrSeries, timeframe, higherTimeframeData) : null,
 			bollinger_bands: bbSeries ? this._enrichBB(bbSeries, bbWidthSeries, currentPrice) : null,
-			atr_ratio: this._calculateATRRatio(ohlcvData)
+			atr_ratio: this._calculateATRRatio(ohlcvData),
+			historical_volatility: this._calculateHistoricalVolatility(ohlcvData)
 		};
 	}
 
@@ -246,6 +249,61 @@ export class VolatilityEnricher {
 			short_long: round(ratio, 2),
 			interpretation,
 			context
+		};
+	}
+
+	/**
+	 * Calculate historical volatility percentile
+	 * Uses rolling standard deviation of log returns to measure where current vol sits historically
+	 */
+	_calculateHistoricalVolatility(ohlcvData) {
+		const closes = ohlcvData.bars.map(b => b.close);
+		if (closes.length < STATISTICAL_PERIODS.long + 1) return null;
+
+		// Calculate log returns
+		const logReturns = [];
+		for (let i = 1; i < closes.length; i++)
+			logReturns.push(Math.log(closes[i] / closes[i - 1]));
+
+		// Rolling volatility (std dev of log returns) over a 20-bar window
+		const window = STATISTICAL_PERIODS.short;
+		const rollingVol = [];
+		for (let i = window; i <= logReturns.length; i++) {
+			const slice = logReturns.slice(i - window, i);
+			const mean = slice.reduce((a, b) => a + b, 0) / slice.length;
+			const variance = slice.reduce((a, v) => a + (v - mean) ** 2, 0) / slice.length;
+			rollingVol.push(Math.sqrt(variance));
+		}
+
+		if (rollingVol.length < 2) return null;
+
+		const currentVol = rollingVol[rollingVol.length - 1];
+		const percentile = this._getPercentile(currentVol, rollingVol);
+
+		// Annualized volatility (approximate: sqrt(365) for crypto, sqrt(252) for stocks)
+		const annualized = round(currentVol * Math.sqrt(365) * 100, 1);
+
+		let interpretation;
+		if (percentile > 0.9)
+			interpretation = 'extreme volatility (top 10% historically)';
+		else if (percentile > 0.75)
+			interpretation = 'high volatility (above 75th percentile)';
+		else if (percentile < 0.1)
+			interpretation = 'extremely low volatility (bottom 10% — expansion likely)';
+		else if (percentile < 0.25)
+			interpretation = 'low volatility (below 25th percentile)';
+		else
+			interpretation = 'normal volatility range';
+
+		return {
+			current_annualized: `${annualized}%`,
+			percentile: round(percentile, 2),
+			interpretation,
+			context: percentile < 0.15
+				? 'vol compression often precedes large moves'
+				: percentile > 0.85
+					? 'elevated vol often mean-reverts'
+					: null
 		};
 	}
 
