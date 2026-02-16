@@ -3,6 +3,7 @@ import { GenericAdapter } from './GenericAdapter.js';
 export class BinanceAdapter extends GenericAdapter {
 	static VALID_TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'];
 	static MAX_LIMIT = 1500;
+	static _pairsCache = { data: null, timestamp: 0, ttl: 30 * 60 * 1000 }; // 30 min cache
 
 	/**
 	 * @param {Object} parameters
@@ -145,48 +146,49 @@ export class BinanceAdapter extends GenericAdapter {
 	async getPairs(options = {}) {
 		const { quoteAsset, baseAsset, status = 'TRADING', permissions } = options;
 
-		const url = `${this.baseUrl}/api/v3/exchangeInfo`;
+		// Use cached exchangeInfo if available and fresh
+		const cache = BinanceAdapter._pairsCache;
+		let allSymbols;
 
-		try {
-			this.logger.info('Fetching available trading pairs...');
+		if (cache.data && (Date.now() - cache.timestamp) < cache.ttl) {
+			allSymbols = cache.data;
+		} else {
+			const url = `${this.baseUrl}/api/v3/exchangeInfo`;
+
+			this.logger.info('Fetching available trading pairs from Binance API...');
 			const startTime = Date.now();
 
 			const response = await this._fetchWithRetry(url, this.timeout);
-
 			if (!response.ok) throw new Error(`Failed to fetch exchange info (${response.status})`);
 
 			const data = await response.json();
-			let symbols = data.symbols || [];
+			allSymbols = data.symbols || [];
 
-			// Apply filters
-			if (status) symbols = symbols.filter((s) => s.status === status);
+			// Cache the raw symbols list
+			cache.data = allSymbols;
+			cache.timestamp = Date.now();
 
-			if (quoteAsset) symbols = symbols.filter((s) => s.quoteAsset === quoteAsset.toUpperCase());
-
-			if (baseAsset) symbols = symbols.filter((s) => s.baseAsset === baseAsset.toUpperCase());
-
-			if (permissions && Array.isArray(permissions)) symbols = symbols.filter((s) => permissions.every((perm) => s.permissions?.includes(perm)));
-
-			// Format response with essential info
-			const pairs = symbols.map((s) => ({
-				symbol: s.symbol,
-				baseAsset: s.baseAsset,
-				quoteAsset: s.quoteAsset,
-				status: s.status,
-				permissions: s.permissions,
-				baseAssetPrecision: s.baseAssetPrecision,
-				quoteAssetPrecision: s.quoteAssetPrecision,
-				isSpotTradingAllowed: s.isSpotTradingAllowed,
-				isMarginTradingAllowed: s.isMarginTradingAllowed,
-			}));
-
-			const duration = Date.now() - startTime;
-			this.logger.info(`Found ${pairs.length} trading pairs in ${duration}ms`);
-
-			return pairs;
-		} catch (error) {
-			this.logger.error(`Error fetching available pairs: ${error.message}`);
-			throw error;
+			this.logger.info(`Cached ${allSymbols.length} symbols from Binance exchangeInfo (${Date.now() - startTime}ms)`);
 		}
+
+		// Apply filters
+		let symbols = allSymbols;
+		if (status) symbols = symbols.filter((s) => s.status === status);
+		if (quoteAsset) symbols = symbols.filter((s) => s.quoteAsset === quoteAsset.toUpperCase());
+		if (baseAsset) symbols = symbols.filter((s) => s.baseAsset === baseAsset.toUpperCase());
+		if (permissions && Array.isArray(permissions)) symbols = symbols.filter((s) => permissions.every((perm) => s.permissions?.includes(perm)));
+
+		// Format response with essential info
+		return symbols.map((s) => ({
+			symbol: s.symbol,
+			baseAsset: s.baseAsset,
+			quoteAsset: s.quoteAsset,
+			status: s.status,
+			permissions: s.permissions,
+			baseAssetPrecision: s.baseAssetPrecision,
+			quoteAssetPrecision: s.quoteAssetPrecision,
+			isSpotTradingAllowed: s.isSpotTradingAllowed,
+			isMarginTradingAllowed: s.isMarginTradingAllowed,
+		}));
 	}
 }

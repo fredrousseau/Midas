@@ -1,5 +1,6 @@
 import { GenericAdapter } from './GenericAdapter.js';
 import YahooFinance from 'yahoo-finance2';
+import { timeframeToMs } from '#utils/timeframe.js';
 
 /**
  * Yahoo Finance Adapter
@@ -34,6 +35,15 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	// Cache for dynamic pairs (avoids repeated API calls)
 	static _pairsCache = { data: null, expiresAt: 0 };
 	static PAIRS_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+
+	// Static indices (shared between dynamic fetch and static fallback)
+	static INDICES = [
+		{ symbol: '^FCHI',     name: 'CAC 40',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+		{ symbol: '^STOXX50E', name: 'Euro Stoxx 50',  exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
+		{ symbol: '^GSPC',     name: 'S&P 500',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+		{ symbol: '^IXIC',     name: 'Nasdaq',         exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+		{ symbol: '^DJI',      name: 'Dow Jones',      exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
+	];
 
 	// Mapping from Midas timeframe format to Yahoo Finance interval strings
 	static TIMEFRAME_MAP = {
@@ -250,15 +260,6 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	 * @returns {Promise<Array>}
 	 */
 	async _fetchDynamicPairs() {
-		// Indices are always static (Yahoo Finance has no index-member API)
-		const indices = [
-			{ symbol: '^FCHI',     name: 'CAC 40',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
-			{ symbol: '^STOXX50E', name: 'Euro Stoxx 50', exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
-			{ symbol: '^GSPC',     name: 'S&P 500',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-			{ symbol: '^IXIC',     name: 'Nasdaq',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-			{ symbol: '^DJI',      name: 'Dow Jones',     exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-		];
-
 		// Fetch trending symbols for FR and US in parallel
 		const [frTrending, usTrending, screenerResults] = await Promise.allSettled([
 			this._yf.trendingSymbols('FR'),
@@ -296,7 +297,7 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		if (equities.length === 0)
 			throw new Error('No symbols returned from Yahoo Finance trending/screener APIs');
 
-		return [...equities, ...indices];
+		return [...equities, ...YahooFinanceAdapter.INDICES];
 	}
 
 	/**
@@ -338,15 +339,7 @@ export class YahooFinanceAdapter extends GenericAdapter {
 			{ symbol: 'MT.AS',   name: 'ArcelorMittal',       exchange: 'Euronext', type: 'EQUITY', quoteAsset: 'EUR', status: 'TRADING' },
 		];
 
-		const indices = [
-			{ symbol: '^FCHI',     name: 'CAC 40',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
-			{ symbol: '^STOXX50E', name: 'Euro Stoxx 50', exchange: 'INDEX', type: 'INDEX', quoteAsset: 'EUR', status: 'TRADING' },
-			{ symbol: '^GSPC',     name: 'S&P 500',       exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-			{ symbol: '^IXIC',     name: 'Nasdaq',        exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-			{ symbol: '^DJI',      name: 'Dow Jones',     exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
-		];
-
-		return [...equities, ...indices];
+		return [...equities, ...YahooFinanceAdapter.INDICES];
 	}
 
 	/**
@@ -360,32 +353,13 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	 * @returns {Date} Calculated start date
 	 */
 	_calcStartDate(endDate, timeframe, count) {
-		const tfMs = this._timeframeToMs(timeframe);
+		const tfMs = timeframeToMs(timeframe, { throwOnError: false, defaultValue: 3600000 });
 		// Buffer factor: 1.7 accounts for weekends (~2/7 days) + holidays + partial candles
 		const bufferFactor = 1.7;
 		const rangeMs = tfMs * count * bufferFactor;
 		return new Date(endDate.getTime() - rangeMs);
 	}
 
-	/**
-	 * Convert Midas timeframe string to milliseconds
-	 * @private
-	 */
-	_timeframeToMs(timeframe) {
-		const map = {
-			'1m':  60 * 1000,
-			'5m':  5  * 60 * 1000,
-			'15m': 15 * 60 * 1000,
-			'30m': 30 * 60 * 1000,
-			'1h':  60 * 60 * 1000,
-			'2h':  2  * 60 * 60 * 1000,
-			'4h':  4  * 60 * 60 * 1000,
-			'1d':  24 * 60 * 60 * 1000,
-			'1w':  7  * 24 * 60 * 60 * 1000,
-			'1M':  30 * 24 * 60 * 60 * 1000,
-		};
-		return map[timeframe] || 60 * 60 * 1000;
-	}
 }
 
 export default YahooFinanceAdapter;

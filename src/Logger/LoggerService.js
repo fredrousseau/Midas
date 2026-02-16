@@ -40,7 +40,7 @@ const logger = winston.createLogger({
 		winston.format.json()
 	),
 	defaultMeta: {
-		service: 'oauth-server',
+		service: 'midas',
 		environment: process.env.NODE_ENV || 'development',
 	},
 	transports: [

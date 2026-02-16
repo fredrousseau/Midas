@@ -226,7 +226,7 @@ const marketContextService = new MarketContextService({
  */
 const mcpService = new McpService({
 	logger: logger,
-	name: 'fredR',
+	name: 'midas',
 	version: '1.0.0',
 });
 

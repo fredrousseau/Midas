@@ -70,7 +70,7 @@ export class CacheManager {
 	async get(symbol, timeframe, count, endTimestamp = null) {
 		const key = this._getCacheKey(symbol, timeframe);
 
-		// Get segment from Redis (Redis TTL gère l'expiration automatiquement)
+		// Get segment from Redis (Redis TTL handles expiration automatically)
 		let segment = null;
 		try {
 			segment = await this.redisAdapter.get(key);
@@ -86,7 +86,7 @@ export class CacheManager {
 		}
 
 		// ✅ Redis gère le TTL - pas besoin de check manuel!
-		// La clé expire automatiquement après ttl secondes
+		// Key expires automatically after ttl seconds
 
 		// If no endTimestamp specified, use the latest bar in cache
 		const requestedEnd = endTimestamp || segment.end;
@@ -180,9 +180,11 @@ export class CacheManager {
 			createdAt: Date.now(),
 		};
 
-		// Save to Redis with TTL (Redis gère l'expiration automatiquement)
+		// Save to Redis with TTL (Redis handles expiration automatically)
+		// TTL=0 means infinite — pass null so Redis stores without expiration
+		const redisTtl = this.ttl > 0 ? Math.floor(this.ttl / 1000) : null;
 		try {
-			await this.redisAdapter.set(key, segment, Math.floor(this.ttl / 1000));
+			await this.redisAdapter.set(key, segment, redisTtl);
 		} catch (error) {
 			this.logger?.error(`Failed to persist segment to Redis for ${key}: ${error.message}`);
 			throw error;
@@ -205,6 +207,7 @@ export class CacheManager {
 		newBars.forEach((bar) => {
 			if (!segment.bars.has(bar.timestamp)) {
 				segment.bars.set(bar.timestamp, bar);
+				segment._sortedTimestamps = null; // Invalidate sorted index
 				merged++;
 
 				// Update start/end bounds
@@ -233,10 +236,12 @@ export class CacheManager {
 		// Evict old bars if exceeding limit
 		await this._evictOldBars(segment);
 
-		// Save updated segment to Redis (renouvelle le TTL automatiquement)
+		// Save updated segment to Redis (automatically renews TTL)
+		// TTL=0 means infinite — pass null so Redis stores without expiration
 		if (merged > 0)
 			try {
-				await this.redisAdapter.set(key, segment, Math.floor(this.ttl / 1000));
+				const redisTtl = this.ttl > 0 ? Math.floor(this.ttl / 1000) : null;
+				await this.redisAdapter.set(key, segment, redisTtl);
 			} catch (error) {
 				this.logger?.error(`Failed to persist merged segment to Redis for ${key}: ${error.message}`);
 				throw error;
@@ -245,6 +250,7 @@ export class CacheManager {
 
 	/**
 	 * Extract bars from segment for a time range
+	 * Uses sorted index for O(log n) range lookup instead of O(n) full scan
 	 * @private
 	 * @param {Object} segment - Cache segment
 	 * @param {number} startTimestamp - Start timestamp
@@ -253,15 +259,24 @@ export class CacheManager {
 	 * @returns {Array<Object>} Array of bars in the specified range
 	 */
 	_extractBars(segment, startTimestamp, endTimestamp, maxCount) {
+		// Build or reuse sorted index
+		if (!segment._sortedTimestamps || segment._sortedTimestamps.length !== segment.bars.size) 
+			segment._sortedTimestamps = Array.from(segment.bars.keys()).sort((a, b) => a - b);
+
+		const sorted = segment._sortedTimestamps;
+
+		// Binary search for start position
+		let lo = 0, hi = sorted.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >>> 1;
+			if (sorted[mid] < startTimestamp) lo = mid + 1;
+			else hi = mid;
+		}
+
+		// Collect bars in range
 		const bars = [];
-
-		// Get all timestamps in range
-		for (const [timestamp, bar] of segment.bars)
-			if (timestamp >= startTimestamp && timestamp <= endTimestamp) 
-				bars.push(bar);
-
-		// Sort by timestamp
-		bars.sort((a, b) => a.timestamp - b.timestamp);
+		for (let i = lo; i < sorted.length && sorted[i] <= endTimestamp; i++)
+			bars.push(segment.bars.get(sorted[i]));
 
 		// Return last 'maxCount' bars
 		return bars.slice(-maxCount);
@@ -283,6 +298,7 @@ export class CacheManager {
 		// Remove oldest bars
 		const toRemove = segment.count - this.maxEntriesPerKey;
 		for (let i = 0; i < toRemove; i++) segment.bars.delete(timestamps[i]);
+		segment._sortedTimestamps = null; // Invalidate sorted index
 
 		// Update segment bounds
 		segment.start = timestamps[toRemove];
@@ -399,7 +415,7 @@ export class CacheManager {
 		try {
 			const keys = await this.redisAdapter.keys();
 
-			// Load each segment to get stats (+ TTL restant)
+			// Load each segment to get stats (+ remaining TTL)
 			for (const key of keys) {
 				// Skip stats key (not a cache segment)
 				if (key === '_stats') continue;
@@ -415,7 +431,7 @@ export class CacheManager {
 						start: new Date(segment.start).toISOString(),
 						end: new Date(segment.end).toISOString(),
 						age: Math.round((Date.now() - segment.createdAt) / 1000),
-						ttlRemaining: ttlRemaining > 0 ? ttlRemaining : 0, // Secondes restantes avant expiration
+						ttlRemaining: ttlRemaining > 0 ? ttlRemaining : 0, // Seconds remaining before expiration
 					});
 				}
 			}
@@ -427,7 +443,7 @@ export class CacheManager {
 		const hitRate = totalRequests > 0 ? ((this.stats.hits / totalRequests) * 100).toFixed(2) : '0.00';
 
 		return {
-			entries: entries.length,
+			entryCount: entries.length,
 			totalBars,
 			stats: {
 				...this.stats,

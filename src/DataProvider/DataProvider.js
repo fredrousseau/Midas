@@ -207,7 +207,7 @@ export class DataProvider {
 			}
 
 			// Calculate the next batch's end time (one bar before the earliest bar we just fetched)
-			const earliestTimestamp = Math.min(...batchData.map(bar => bar.timestamp));
+			const earliestTimestamp = batchData.reduce((min, bar) => Math.min(min, bar.timestamp), Infinity);
 			currentEndTime = earliestTimestamp - timeframeMs;
 		}
 
@@ -283,11 +283,96 @@ export class DataProvider {
 					loadDuration: duration,
 					loadedAt: new Date().toISOString(),
 				};
-			} else if (cacheResult.coverage === 'partial') {
-				// Partial hit - we have some bars, need to fetch missing ones
-				this.logger.verbose(`Cache HIT (partial) for ${symbol} (${timeframe}): have ${cacheResult.bars.length}/${count} bars, fetching missing data`);
-				// For now, treat as miss and fetch all data
-				// TODO: Implement smart partial fetch
+			} else if (cacheResult.coverage === 'partial' && cacheResult.bars.length > 0) {
+				// Partial hit — fetch only the missing bars
+				const cachedBars = cacheResult.bars;
+				const missing = cacheResult.missing;
+				const missingCount = count - cachedBars.length;
+				this.logger.verbose(`Cache HIT (partial) for ${symbol} (${timeframe}): have ${cachedBars.length}/${count} bars, fetching ${missingCount} missing`);
+
+				try {
+					let fetchedBars = [];
+
+					// Fetch bars before cached range
+					if (missing.before) {
+						const beforeCount = Math.ceil((missing.before.end - missing.before.start) / timeframeToMs(timeframe)) + 1;
+						const beforeBars = await this.dataAdapter.fetchOHLC({
+							symbol, timeframe,
+							count: Math.min(beforeCount, missingCount),
+							to: missing.before.end,
+						});
+						fetchedBars = fetchedBars.concat(beforeBars);
+					}
+
+					// Fetch bars after cached range
+					if (missing.after) {
+						const afterCount = Math.ceil((missing.after.end - missing.after.start) / timeframeToMs(timeframe)) + 1;
+						const afterBars = await this.dataAdapter.fetchOHLC({
+							symbol, timeframe,
+							count: Math.min(afterCount, missingCount - fetchedBars.length),
+							from: missing.after.start,
+						});
+						fetchedBars = fetchedBars.concat(afterBars);
+					}
+
+					if (fetchedBars.length > 0) 
+						// Merge fetched bars into cache
+						await this.cacheManager.set(symbol, timeframe, fetchedBars);
+
+					// Combine, dedupe, sort and return
+					const allBars = this._cleanOHLCVData([...cachedBars, ...fetchedBars]);
+					let finalBars = allBars;
+
+					// Apply referenceDate filter if needed
+					if (analysisTimestamp) {
+						const tfMs = timeframeToMs(timeframe);
+						finalBars = finalBars.filter((bar) => bar.timestamp + tfMs <= analysisTimestamp);
+					}
+
+					finalBars = finalBars.slice(-count);
+					const duration = Date.now() - startTime;
+
+					return {
+						symbol, timeframe,
+						count: finalBars.length,
+						bars: finalBars,
+						firstTimestamp: finalBars.at(0)?.timestamp ?? null,
+						lastTimestamp: finalBars.at(-1)?.timestamp ?? null,
+						referenceDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
+						gaps: detectGaps ? this._detectGaps(finalBars, timeframe) : [],
+						gapCount: 0,
+						fromCache: 'partial',
+						loadDuration: duration,
+						loadedAt: new Date().toISOString(),
+					};
+				} catch (_e) {
+					// If partial fetch fails, return cached data if usable (>= 50% of requested)
+					if (cachedBars.length >= count * 0.5) {
+						this.logger.warn(`Smart partial fetch failed for ${symbol} (${timeframe}), returning ${cachedBars.length}/${count} cached bars`);
+						const duration = Date.now() - startTime;
+						let finalBars = cachedBars;
+						if (analysisTimestamp) {
+							const tfMs = timeframeToMs(timeframe);
+							finalBars = finalBars.filter((bar) => bar.timestamp + tfMs <= analysisTimestamp);
+						}
+						finalBars = finalBars.slice(-count);
+						return {
+							symbol, timeframe,
+							count: finalBars.length,
+							bars: finalBars,
+							firstTimestamp: finalBars.at(0)?.timestamp ?? null,
+							lastTimestamp: finalBars.at(-1)?.timestamp ?? null,
+							referenceDate: analysisTimestamp ? new Date(analysisTimestamp).toISOString() : null,
+							gaps: detectGaps ? this._detectGaps(finalBars, timeframe) : [],
+							gapCount: 0,
+							fromCache: 'partial_degraded',
+							loadDuration: duration,
+							loadedAt: new Date().toISOString(),
+						};
+					}
+					// Otherwise fall through to full fetch below
+					this.logger.warn(`Smart partial fetch failed for ${symbol} (${timeframe}), falling back to full fetch`);
+				}
 			}
 		}
 

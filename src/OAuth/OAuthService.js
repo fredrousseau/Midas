@@ -66,22 +66,22 @@ export class OAuthService {
 			{
 				method: 'get',
 				path: '/.well-known/oauth-authorization-server',
-				handler: this.wellKnownGetHandler,
+				handler: this.wellKnownGetHandler.bind(this),
 			},
 			{
 				method: 'post',
 				path: '/oauth/register',
-				handler: this.registerPostHandler,
+				handler: this.registerPostHandler.bind(this),
 			},
 			{
 				method: 'get',
 				path: '/oauth/authorize',
-				handler: this.authorizeGetHandler,
+				handler: this.authorizeGetHandler.bind(this),
 			},
 			{
 				method: 'post',
 				path: '/oauth/token',
-				handler: this.tokenPostHandler,
+				handler: this.tokenPostHandler.bind(this),
 			},
 		];
 		return routes;
@@ -238,7 +238,7 @@ export class OAuthService {
 		const validation = this.tokenSchema.safeParse(req.body);
 
 		if (!validation.success) {
-			const errorMsg = 'Invalid Token Rquest';
+			const errorMsg = 'Invalid Token Request';
 			this.logger.verbose(`${errorMsg}: ${validation.error.message}`);
 			return res.status(400).json({
 				error: 'invalid_request',

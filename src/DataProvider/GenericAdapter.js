@@ -97,6 +97,9 @@ export class GenericAdapter {
 
 	_isRetryableError(error) {
 		const msg = error.message;
+		// Never retry client errors (4xx except 429 rate limit)
+		if (msg.includes('400') || msg.includes('401') || msg.includes('403') || msg.includes('404'))
+			return false;
 		return msg.includes('timeout') || msg.includes('ECONNREFUSED') || msg.includes('ENOTFOUND') ||
 			msg.includes('500') || msg.includes('502') || msg.includes('503') || msg.includes('504') ||
 			msg.includes('429');
