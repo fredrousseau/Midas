@@ -1093,9 +1093,10 @@
                         <input type="text" id="webhookUrl" value="https://n8n.skynet.ovh/webhook/fred" placeholder="https://example.com/webhook">
                     </div>
 
-                    <div class="control-group">
+                    <div class="control-group symbol-search-wrapper">
                         <label for="webhookSymbol">Symbol</label>
-                        <input type="text" id="webhookSymbol" value="BTCUSDT" placeholder="ex: BTCUSDT">
+                        <input type="text" id="webhookSymbol" value="BTCUSDT" placeholder="ex: BTCUSDT ou LVMH" autocomplete="off">
+                        <div id="webhookSymbol-suggestions" class="symbol-suggestions" style="display:none;"></div>
                     </div>
 
                     <div class="control-group">

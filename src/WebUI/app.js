@@ -868,85 +868,106 @@ document.getElementById('symbol').addEventListener('keypress', (e) => {
 	}
 });
 
-// ─── Symbol autocomplete ───────────────────────────────────────────────────
+// ─── Symbol autocomplete (reusable) ────────────────────────────────────────
 
-const symbolInput       = document.getElementById('symbol');
-const suggestionsBox    = document.getElementById('symbol-suggestions');
-let   _searchDebounceId = null;
-let   _activeIndex      = -1;
+/**
+ * Attach symbol autocomplete behaviour to any input + dropdown element pair.
+ *
+ * @param {HTMLInputElement} inputEl      - The text input
+ * @param {HTMLElement}      dropdownEl   - The suggestions container div
+ * @param {Function}         onSelect     - Called with the selected symbol string
+ */
+function attachSymbolAutocomplete(inputEl, dropdownEl, onSelect) {
+	let debounceId  = null;
+	let activeIndex = -1;
 
-function hideSymbolSuggestions() {
-	suggestionsBox.style.display = 'none';
-	suggestionsBox.innerHTML = '';
-	_activeIndex = -1;
-}
+	function hide() {
+		dropdownEl.style.display = 'none';
+		dropdownEl.innerHTML = '';
+		activeIndex = -1;
+	}
 
-function showSymbolSuggestions(results) {
-	if (!results || results.length === 0) { hideSymbolSuggestions(); return; }
+	function show(results) {
+		if (!results || results.length === 0) { hide(); return; }
 
-	suggestionsBox.innerHTML = results.map((r, i) => {
-		const name     = r.name     ? `<span class="suggestion-name">${r.name}</span>` : '';
-		const exchange = r.exchange ? `<span class="suggestion-exchange">${r.exchange}</span>` : '';
-		const badge    = `<span class="suggestion-badge ${r._adapter || ''}">${r._adapter || ''}</span>`;
-		return `<div class="symbol-suggestion-item" data-index="${i}" data-symbol="${r.symbol}">
-			<span class="suggestion-symbol">${r.symbol}</span>${name}${exchange}${badge}
-		</div>`;
-	}).join('');
+		dropdownEl.innerHTML = results.map((r, i) => {
+			const name     = r.name     ? `<span class="suggestion-name">${r.name}</span>` : '';
+			const exchange = r.exchange ? `<span class="suggestion-exchange">${r.exchange}</span>` : '';
+			const badge    = `<span class="suggestion-badge ${r._adapter || ''}">${r._adapter || ''}</span>`;
+			return `<div class="symbol-suggestion-item" data-index="${i}" data-symbol="${r.symbol}">
+				<span class="suggestion-symbol">${r.symbol}</span>${name}${exchange}${badge}
+			</div>`;
+		}).join('');
 
-	suggestionsBox.querySelectorAll('.symbol-suggestion-item').forEach(item => {
-		item.addEventListener('mousedown', (e) => {
-			e.preventDefault(); // prevent blur before click
-			symbolInput.value = item.dataset.symbol;
-			hideSymbolSuggestions();
-			loadData();
+		dropdownEl.querySelectorAll('.symbol-suggestion-item').forEach(item => {
+			item.addEventListener('mousedown', (e) => {
+				e.preventDefault();
+				inputEl.value = item.dataset.symbol;
+				hide();
+				onSelect(item.dataset.symbol);
+			});
 		});
+
+		dropdownEl.style.display = 'block';
+		activeIndex = -1;
+	}
+
+	function navigate(direction) {
+		const items = dropdownEl.querySelectorAll('.symbol-suggestion-item');
+		if (!items.length) return;
+		items[activeIndex]?.classList.remove('active');
+		activeIndex = (activeIndex + direction + items.length) % items.length;
+		const active = items[activeIndex];
+		active.classList.add('active');
+		active.scrollIntoView({ block: 'nearest' });
+	}
+
+	inputEl.addEventListener('keydown', (e) => {
+		if (e.key === 'ArrowDown') { e.preventDefault(); navigate(1); }
+		if (e.key === 'ArrowUp')   { e.preventDefault(); navigate(-1); }
+		if (e.key === 'Enter' && activeIndex >= 0) {
+			const active = dropdownEl.querySelectorAll('.symbol-suggestion-item')[activeIndex];
+			if (active) { inputEl.value = active.dataset.symbol; hide(); onSelect(active.dataset.symbol); }
+		}
+		if (e.key === 'Escape') hide();
 	});
 
-	suggestionsBox.style.display = 'block';
-	_activeIndex = -1;
+	inputEl.addEventListener('input', () => {
+		clearTimeout(debounceId);
+		const q = inputEl.value.trim();
+		if (q.length < 2) { hide(); return; }
+		debounceId = setTimeout(async () => {
+			try {
+				const res  = await authenticatedFetch(`${API_BASE}/api/v1/market-data/search?q=${encodeURIComponent(q)}`);
+				const json = await res.json();
+				if (json.success && json.data?.results) show(json.data.results);
+			} catch (_err) { /* silently ignore search errors */ }
+		}, 300);
+	});
+
+	document.addEventListener('click', (e) => {
+		if (!inputEl.contains(e.target) && !dropdownEl.contains(e.target)) hide();
+	});
+
+	// Expose hide so callers can close the dropdown programmatically
+	return { hide };
 }
 
-function navigateSuggestions(direction) {
-	const items = suggestionsBox.querySelectorAll('.symbol-suggestion-item');
-	if (!items.length) return;
+// Attach to main chart symbol input
+const _mainSymbolAc = attachSymbolAutocomplete(
+	document.getElementById('symbol'),
+	document.getElementById('symbol-suggestions'),
+	() => loadData()
+);
 
-	items[_activeIndex]?.classList.remove('active');
-	_activeIndex = (_activeIndex + direction + items.length) % items.length;
-	const active = items[_activeIndex];
-	active.classList.add('active');
-	active.scrollIntoView({ block: 'nearest' });
-}
+// Attach to webhook symbol input (available after DOM is ready — initWebhookTab runs later)
+const _webhookSymbolAc = attachSymbolAutocomplete(
+	document.getElementById('webhookSymbol'),
+	document.getElementById('webhookSymbol-suggestions'),
+	(symbol) => { document.getElementById('webhookSymbol').value = symbol; }
+);
 
-symbolInput.addEventListener('keydown', (e) => {
-	if (e.key === 'ArrowDown') { e.preventDefault(); navigateSuggestions(1); }
-	if (e.key === 'ArrowUp')   { e.preventDefault(); navigateSuggestions(-1); }
-	if (e.key === 'Enter' && _activeIndex >= 0) {
-		const active = suggestionsBox.querySelectorAll('.symbol-suggestion-item')[_activeIndex];
-		if (active) { symbolInput.value = active.dataset.symbol; hideSymbolSuggestions(); loadData(); }
-	}
-	if (e.key === 'Escape') hideSymbolSuggestions();
-});
-
-symbolInput.addEventListener('input', () => {
-	clearTimeout(_searchDebounceId);
-	const q = symbolInput.value.trim();
-
-	if (q.length < 2) { hideSymbolSuggestions(); return; }
-
-	_searchDebounceId = setTimeout(async () => {
-		try {
-			const res  = await authenticatedFetch(`${API_BASE}/api/v1/market-data/search?q=${encodeURIComponent(q)}`);
-			const json = await res.json();
-			if (json.success && json.data?.results) showSymbolSuggestions(json.data.results);
-		} catch (_err) { /* silently ignore search errors */ }
-	}, 300);
-});
-
-// Hide dropdown when clicking outside
-document.addEventListener('click', (e) => {
-	if (!symbolInput.contains(e.target) && !suggestionsBox.contains(e.target))
-		hideSymbolSuggestions();
-});
+function hideSymbolSuggestions() { _mainSymbolAc.hide(); }
 
 // Track last loaded parameters to detect mismatches
 let lastLoadedParams = null;
