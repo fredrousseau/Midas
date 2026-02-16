@@ -4,6 +4,7 @@
 
 import { asyncHandler, parseTradingParams } from './Utils/helpers.js';
 import { BinanceAdapter } from './DataProvider/BinanceAdapter.js';
+import { YahooFinanceAdapter } from './DataProvider/YahooFinanceAdapter.js';
 import rateLimit from 'express-rate-limit';
 
 // Helper to create rate limiters with consistent logging
@@ -339,12 +340,15 @@ export function registerRoutes(parameters) {
 			const errors = [];
 
 			if (!symbol)
-				errors.push('symbol is required (e.g. BTCUSDT)');
-			else if (typeof symbol !== 'string' || !/^[A-Z0-9]+$/.test(symbol))
-				errors.push(`symbol '${symbol}' is invalid — must be uppercase alphanumeric (e.g. BTCUSDT)`);
+				errors.push('symbol is required (e.g. BTCUSDT or MC.PA)');
+			else if (typeof symbol !== 'string' || symbol.trim().length === 0)
+				errors.push(`symbol '${symbol}' is invalid`);
 
-			// Validate timeframes
-			const validTimeframes = BinanceAdapter.VALID_TIMEFRAMES;
+			// Validate timeframes — union of both adapters
+			const validTimeframes = [...new Set([
+				...BinanceAdapter.VALID_TIMEFRAMES,
+				...YahooFinanceAdapter.VALID_TIMEFRAMES,
+			])];
 			const timeframesObj = {};
 
 			if (!long && !medium && !short) {

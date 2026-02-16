@@ -1,11 +1,16 @@
 /**
  * AdapterRouter
  *
- * Routes data requests to the appropriate adapter based on the symbol format.
+ * Routes data requests to the appropriate adapter based on symbol format,
+ * with automatic fallback when the primary adapter rejects the symbol.
  *
- * Routing rules:
- *   - Binance : uppercase alphanumeric only, no dots/dashes/carets (e.g. BTCUSDT, ETHUSDT)
- *   - Yahoo   : contains '.', '-', '^', or lowercase letters (e.g. MC.PA, AAPL, ^FCHI, BTC-USD)
+ * Primary routing (by symbol format):
+ *   - Yahoo first  : contains '.', '-', '^', or lowercase  (e.g. MC.PA, ^FCHI, BTC-USD)
+ *   - Binance first: uppercase alphanumeric only            (e.g. BTCUSDT, ETHUSDT)
+ *
+ * Fallback: if the primary adapter returns an "Invalid symbol" error, the request
+ * is transparently retried on the other adapter. This handles ambiguous symbols
+ * like 'AAPL' or 'LVMH' that look like Binance pairs but are Yahoo equities.
  *
  * Implements the same interface as GenericAdapter so it can be used as a drop-in
  * replacement for the dataAdapter parameter of DataProvider.
@@ -30,25 +35,81 @@ export class AdapterRouter {
 		this.binanceAdapter = binanceAdapter;
 		this.yahooAdapter   = yahooAdapter;
 		this.logger         = logger;
+
+		// Symbol → adapter name cache to avoid repeated fallback attempts
+		this._symbolCache = new Map();
 	}
 
 	/**
-	 * Select the right adapter for a given symbol.
+	 * Select the primary adapter for a given symbol based on format heuristics.
+	 * Returns [primary, fallback].
 	 *
 	 * @param {string} symbol
-	 * @returns {import('./GenericAdapter.js').GenericAdapter}
+	 * @returns {[import('./GenericAdapter.js').GenericAdapter, import('./GenericAdapter.js').GenericAdapter]}
 	 */
-	_resolve(symbol) {
+	_resolvePrimary(symbol) {
+		// Cached routing from a previous successful request
+		const cached = this._symbolCache.get(symbol);
+		if (cached === 'yahoo')   return [this.yahooAdapter,   this.binanceAdapter];
+		if (cached === 'binance') return [this.binanceAdapter, this.yahooAdapter];
+
 		// Yahoo symbols contain '.', '-', '^' or lowercase letters
-		const isYahoo = /[.\-^]/.test(symbol) || /[a-z]/.test(symbol);
+		if (/[.\-^]/.test(symbol) || /[a-z]/.test(symbol))
+			return [this.yahooAdapter, this.binanceAdapter];
 
-		if (isYahoo) {
-			this.logger.verbose(`AdapterRouter: ${symbol} → YahooFinanceAdapter`);
-			return this.yahooAdapter;
+		// Default: try Binance first (crypto pairs), fall back to Yahoo (US equities)
+		return [this.binanceAdapter, this.yahooAdapter];
+	}
+
+	/**
+	 * Returns true if the error indicates an unknown/invalid symbol on the adapter,
+	 * meaning we should retry on the other adapter.
+	 *
+	 * @param {Error} error
+	 * @returns {boolean}
+	 */
+	_isInvalidSymbolError(error) {
+		const msg = error.message || '';
+		return msg.includes('Invalid symbol') ||
+			msg.includes('-1121') ||
+			msg.includes('No data returned') ||
+			msg.includes('not found') ||
+			msg.includes('delisted');
+	}
+
+	/**
+	 * Try the primary adapter, automatically fall back to the secondary on symbol errors.
+	 *
+	 * @param {string} symbol
+	 * @param {Function} fn - (adapter) => Promise
+	 * @returns {Promise<*>}
+	 */
+	async _withFallback(symbol, fn) {
+		const [primary, fallback] = this._resolvePrimary(symbol);
+		const primaryName  = primary  === this.binanceAdapter ? 'binance' : 'yahoo';
+		const fallbackName = fallback === this.binanceAdapter ? 'binance' : 'yahoo';
+
+		try {
+			this.logger.verbose(`AdapterRouter: ${symbol} → ${primaryName} (primary)`);
+			const result = await fn(primary);
+			this._symbolCache.set(symbol, primaryName);
+			return result;
+		} catch (primaryError) {
+			if (!this._isInvalidSymbolError(primaryError)) throw primaryError;
+
+			this.logger.info(`AdapterRouter: ${symbol} not found on ${primaryName}, trying ${fallbackName}`);
+			try {
+				const result = await fn(fallback);
+				this._symbolCache.set(symbol, fallbackName);
+				this.logger.info(`AdapterRouter: ${symbol} resolved via ${fallbackName} (cached for future requests)`);
+				return result;
+			} catch (fallbackError) {
+				// Both failed — throw the most meaningful error
+				if (this._isInvalidSymbolError(fallbackError))
+					throw new Error(`Symbol '${symbol}' not found on Binance or Yahoo Finance`);
+				throw fallbackError;
+			}
 		}
-
-		this.logger.verbose(`AdapterRouter: ${symbol} → BinanceAdapter`);
-		return this.binanceAdapter;
 	}
 
 	// ──────────────────────────────────────────────────────────────────────────
@@ -56,23 +117,23 @@ export class AdapterRouter {
 	// ──────────────────────────────────────────────────────────────────────────
 
 	/**
-	 * Fetch OHLCV data — delegates to the appropriate adapter.
+	 * Fetch OHLCV data — delegates to the appropriate adapter with fallback.
 	 *
 	 * @param {Object} params - Same parameters as GenericAdapter.fetchOHLC()
 	 * @returns {Promise<Array>}
 	 */
 	async fetchOHLC(params) {
-		return this._resolve(params.symbol).fetchOHLC(params);
+		return this._withFallback(params.symbol, adapter => adapter.fetchOHLC(params));
 	}
 
 	/**
-	 * Get current price — delegates to the appropriate adapter.
+	 * Get current price — delegates to the appropriate adapter with fallback.
 	 *
 	 * @param {string} symbol
 	 * @returns {Promise<number>}
 	 */
 	async getPrice(symbol) {
-		return this._resolve(symbol).getPrice(symbol);
+		return this._withFallback(symbol, adapter => adapter.getPrice(symbol));
 	}
 
 	/**
