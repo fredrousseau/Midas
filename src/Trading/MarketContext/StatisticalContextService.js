@@ -161,30 +161,32 @@ export class StatisticalContextService {
 		};
 
 		// Base enrichment for all levels
-		enriched.moving_averages = await this.maEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, referenceDate });
 		enriched.trend_indicators = { adx: this._extractADXInfo(regimeData) };
 
-		// Light level: basic price action only
+		// Light level: basic price action + moving averages
 		if (contextDepth.level === 'light') {
+			enriched.moving_averages = await this.maEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, referenceDate });
 			enriched.price_action = this._extractBasicPriceAction(ohlcvData);
 		}
-		// Medium and Full: add momentum, volatility, volume
+		// Medium and Full: run enrichers in parallel
 		else {
 			const htf = this._getHigherTimeframe(timeframe, Object.keys(higherTFData));
 			const htfData = htf ? higherTFData[htf] : null;
 
-			enriched.momentum_indicators = await this.momentumEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, higherTimeframeData: htfData, referenceDate });
-			enriched.volatility_indicators = await this.volatilityEnricher.enrich({
-				ohlcvData,
-				indicatorService: this.indicatorService,
-				symbol,
-				timeframe,
-				currentPrice,
-				higherTimeframeData: htfData,
-				referenceDate,
-			});
-			enriched.volume_indicators = await this.volumeEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, referenceDate });
-			enriched.trend_indicators.psar = await this._getPSAR(symbol, timeframe, referenceDate);
+			// Run all async enrichers in parallel
+			const [maResult, momentumResult, volatilityResult, volumeResult, psarResult] = await Promise.all([
+				this.maEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, referenceDate }),
+				this.momentumEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, higherTimeframeData: htfData, referenceDate }),
+				this.volatilityEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, currentPrice, higherTimeframeData: htfData, referenceDate }),
+				this.volumeEnricher.enrich({ ohlcvData, indicatorService: this.indicatorService, symbol, timeframe, referenceDate }),
+				this._getPSAR(symbol, timeframe, referenceDate),
+			]);
+
+			enriched.moving_averages = maResult;
+			enriched.momentum_indicators = momentumResult;
+			enriched.volatility_indicators = volatilityResult;
+			enriched.volume_indicators = volumeResult;
+			enriched.trend_indicators.psar = psarResult;
 			enriched.price_action = this.priceActionEnricher.enrich({ ohlcvData, currentPrice });
 			enriched.support_resistance = this._identifySupportResistance(ohlcvData, enriched);
 

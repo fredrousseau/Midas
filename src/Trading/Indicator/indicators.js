@@ -312,6 +312,12 @@ export class Indicator {
 		const metadata = getIndicatorMetadata(indicator);
 		if (!metadata) throw new Error(`Invalid indicator: ${indicator}. Use getAvailableIndicators() to see all indicators.`);
 
+		// Validate that requested bars can satisfy the indicator's warmup needs
+		const mergedConfig = this._mergeConfig(metadata, config);
+		const warmup = typeof metadata.warmup === 'function' ? metadata.warmup(mergedConfig) : metadata.warmup || 50;
+		if (bars < warmup)
+			this.logger.warn(`${indicator}: requested ${bars} bars but warmup needs ${warmup}. Results will have fewer valid data points.`);
+
 		// Calculate indicators with automatic warmup handling
 		const result = await this.calculateIndicators({
 			symbol,

@@ -37,13 +37,22 @@ export class MarketContextService {
 	 * @param {Object} params - { symbol, timeframes, referenceDate }
 	 * @returns {Promise<Object>} - Complete context with alignment and conflicts
 	 */
-	async generateContext({ symbol, timeframes, referenceDate }) {
-		// Generate statistical context with built-in alignment analysis
-		const statContext = await this.statisticalContextService.generateFullContext({
-			symbol,
-			timeframes,
-			referenceDate,
-		});
+	async generateContext({ symbol, timeframes, referenceDate, timeout }) {
+		const timeoutMs = timeout || parseInt(process.env.CONTEXT_TIMEOUT_MS, 10) || 60000;
+
+		// Generate statistical context with global timeout to prevent indefinite blocking
+		const timeoutPromise = new Promise((_, reject) =>
+			setTimeout(() => reject(new Error(`generateContext timed out after ${timeoutMs}ms for ${symbol}`)), timeoutMs)
+		);
+
+		const statContext = await Promise.race([
+			this.statisticalContextService.generateFullContext({
+				symbol,
+				timeframes,
+				referenceDate,
+			}),
+			timeoutPromise,
+		]);
 
 		const alignment = statContext._internal_alignment;
 
