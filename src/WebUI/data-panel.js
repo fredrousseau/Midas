@@ -55,12 +55,6 @@ function formatNumber(value, decimals = 2) {
     });
 }
 
-// Format timestamp — delegates to formatTimestamp() from app.js (global)
-function formatDate(timestamp) {
-    if (!timestamp) return '-';
-    return formatTimestamp(timestamp * 1000);
-}
-
 // Update data panel with candle and indicator data
 function updateDataPanel(time, candleData) {
     if (!time || !candleData) {
@@ -77,7 +71,7 @@ function updateDataPanel(time, candleData) {
     // Candle section
     html += '<div class="data-section">';
     html += '<div class="data-section-title">Bougie</div>';
-    html += `<div class="data-row"><span class="data-label">Date:</span><span class="data-value">${formatDate(time)}</span></div>`;
+    html += `<div class="data-row"><span class="data-label">Date:</span><span class="data-value">${time ? formatTimestamp(time * 1000) : '-'}</span></div>`;
     html += `<div class="data-row"><span class="data-label">Open:</span><span class="data-value">${formatNumber(candleData.open, 2)}</span></div>`;
     html += `<div class="data-row"><span class="data-label">High:</span><span class="data-value positive">${formatNumber(candleData.high, 2)}</span></div>`;
     html += `<div class="data-row"><span class="data-label">Low:</span><span class="data-value negative">${formatNumber(candleData.low, 2)}</span></div>`;

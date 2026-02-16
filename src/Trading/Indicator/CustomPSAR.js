@@ -108,21 +108,6 @@ export class CustomPSAR {
 		return this.sar;
 	}
 
-	/**
-	 * Check if indicator is stable (has enough data)
-	 * @returns {boolean}
-	 */
-	get stable() {
-		return this.isStable;
-	}
-
-	/**
-	 * Get current trend direction
-	 * @returns {boolean} true if uptrend, false if downtrend
-	 */
-	get trend() {
-		return this.isUptrend;
-	}
 }
 
 export default CustomPSAR;

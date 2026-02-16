@@ -196,14 +196,6 @@ export class RedisCacheAdapter {
 	}
 
 	/**
-	 * Check if Redis is connected
-	 * @returns {boolean}
-	 */
-	isReady() {
-		return this.isConnected && this.client.isOpen;
-	}
-
-	/**
 	 * Get TTL (time to live) for a key in seconds
 	 * Uses Redis TTL command
 	 * @param {string} key - Cache key (without prefix)
@@ -221,28 +213,6 @@ export class RedisCacheAdapter {
 		} catch (error) {
 			this.logger?.error(`Redis TTL error for ${key}: ${error.message}`);
 			return -2;
-		}
-	}
-
-	/**
-	 * Get Redis server information
-	 * @returns {Promise<Object>} Object with connection status, dbSize, and memory info
-	 */
-	async getInfo() {
-		if (!this.isConnected) return { connected: false };
-
-		try {
-			const info = await this.client.info('memory');
-			const dbSize = await this.client.dbSize();
-
-			return {
-				connected: true,
-				dbSize,
-				memory: info,
-			};
-		} catch (error) {
-			this.logger?.error(`Redis info error: ${error.message}`);
-			return { connected: false, error: error.message };
 		}
 	}
 

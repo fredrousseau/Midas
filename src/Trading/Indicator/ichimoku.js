@@ -173,69 +173,6 @@ export class IchimokuCloud {
   }
 
   /**
-   * Check if indicator is ready (has enough data)
-   * @returns {boolean}
-   */
-  isReady() {
-    return this.highs.length >= this.senkouPeriod;
-  }
-
-  /**
-   * Get signal interpretation
-   * @returns {Object} { trend, signal, cloudColor, priceVsCloud }
-   */
-  getSignal() {
-    const result = this.getResult();
-
-    if (!result || !result.tenkan || !result.kijun ||
-        !result.senkouA || !result.senkouB)
-      return null;
-
-    const currentClose = this.closes[this.closes.length - 1];
-
-    // Determine cloud color
-    const cloudColor = result.senkouA > result.senkouB ? 'bullish' : 'bearish';
-
-    // Price position relative to cloud
-    const cloudTop = Math.max(result.senkouA, result.senkouB);
-    const cloudBottom = Math.min(result.senkouA, result.senkouB);
-
-    let priceVsCloud;
-    if (currentClose > cloudTop)
-      priceVsCloud = 'above';
-     else if (currentClose < cloudBottom)
-      priceVsCloud = 'below';
-     else
-      priceVsCloud = 'inside';
-
-    // TK Cross signal
-    let signal = 'neutral';
-    if (result.tenkan > result.kijun)
-      signal = 'bullish';
-     else if (result.tenkan < result.kijun)
-      signal = 'bearish';
-
-    // Overall trend
-    let trend = 'neutral';
-    if (priceVsCloud === 'above' && cloudColor === 'bullish' && signal === 'bullish')
-      trend = 'strong_bullish';
-     else if (priceVsCloud === 'below' && cloudColor === 'bearish' && signal === 'bearish')
-      trend = 'strong_bearish';
-     else if (priceVsCloud === 'above')
-      trend = 'bullish';
-     else if (priceVsCloud === 'below')
-      trend = 'bearish';
-
-    return {
-      trend,
-      signal,
-      cloudColor,
-      priceVsCloud,
-      tenkanKijunCross: result.tenkan > result.kijun ? 'bullish' : 'bearish'
-    };
-  }
-
-  /**
    * Reset the indicator
    */
   reset() {
