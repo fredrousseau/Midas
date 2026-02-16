@@ -3,7 +3,11 @@ import { GenericAdapter } from './GenericAdapter.js';
 export class BinanceAdapter extends GenericAdapter {
 	static VALID_TIMEFRAMES = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M'];
 	static MAX_LIMIT = 1500;
-	static _pairsCache = { data: null, timestamp: 0, ttl: 30 * 60 * 1000 }; // 30 min cache
+	static PAIRS_CACHE_KEY = 'midas:pairs:binance';
+	static PAIRS_CACHE_TTL = 30 * 60; // 30 min in seconds
+
+	// In-memory fallback when Redis is not available
+	static _pairsCache = { data: null, timestamp: 0, ttl: 30 * 60 * 1000 };
 
 	/**
 	 * @param {Object} parameters
@@ -14,7 +18,17 @@ export class BinanceAdapter extends GenericAdapter {
 	constructor(parameters = {}) {
 		super(parameters);
 		this.baseUrl = parameters.baseUrl || 'https://api.binance.com';
+		this._redisClient = null;
 		this.logger.info(`BinanceAdapter initialized - Base URL: ${this.baseUrl}`);
+	}
+
+	/**
+	 * Inject Redis client for persistent pairs cache
+	 * @param {Object} redisClient - Redis client instance (node-redis v4+)
+	 */
+	setRedisClient(redisClient) {
+		this._redisClient = redisClient;
+		this.logger.info('BinanceAdapter: Redis client injected for pairs cache');
 	}
 
 	/**
@@ -146,13 +160,9 @@ export class BinanceAdapter extends GenericAdapter {
 	async getPairs(options = {}) {
 		const { quoteAsset, baseAsset, status = 'TRADING', permissions } = options;
 
-		// Use cached exchangeInfo if available and fresh
-		const cache = BinanceAdapter._pairsCache;
-		let allSymbols;
+		let allSymbols = await this._getPairsCached();
 
-		if (cache.data && (Date.now() - cache.timestamp) < cache.ttl) {
-			allSymbols = cache.data;
-		} else {
+		if (!allSymbols) {
 			const url = `${this.baseUrl}/api/v3/exchangeInfo`;
 
 			this.logger.info('Fetching available trading pairs from Binance API...');
@@ -164,10 +174,7 @@ export class BinanceAdapter extends GenericAdapter {
 			const data = await response.json();
 			allSymbols = data.symbols || [];
 
-			// Cache the raw symbols list
-			cache.data = allSymbols;
-			cache.timestamp = Date.now();
-
+			await this._setPairsCache(allSymbols);
 			this.logger.info(`Cached ${allSymbols.length} symbols from Binance exchangeInfo (${Date.now() - startTime}ms)`);
 		}
 
@@ -190,5 +197,51 @@ export class BinanceAdapter extends GenericAdapter {
 			isSpotTradingAllowed: s.isSpotTradingAllowed,
 			isMarginTradingAllowed: s.isMarginTradingAllowed,
 		}));
+	}
+
+	/**
+	 * Get pairs from cache (Redis first, then in-memory fallback)
+	 * @private
+	 * @returns {Promise<Array|null>} Cached symbols or null if cache miss
+	 */
+	async _getPairsCached() {
+		// Try Redis first
+		if (this._redisClient)
+			try {
+				const data = await this._redisClient.get(BinanceAdapter.PAIRS_CACHE_KEY);
+				if (data) return JSON.parse(data);
+			} catch {
+				this.logger.warn('BinanceAdapter: Redis pairs cache read failed, falling back to memory');
+			}
+
+		// Fallback to in-memory cache
+		const cache = BinanceAdapter._pairsCache;
+		if (cache.data && (Date.now() - cache.timestamp) < cache.ttl)
+			return cache.data;
+
+		return null;
+	}
+
+	/**
+	 * Store pairs in cache (Redis + in-memory)
+	 * @private
+	 * @param {Array} symbols - Raw symbols array from Binance exchangeInfo
+	 */
+	async _setPairsCache(symbols) {
+		// Always update in-memory cache
+		BinanceAdapter._pairsCache.data = symbols;
+		BinanceAdapter._pairsCache.timestamp = Date.now();
+
+		// Persist to Redis if available
+		if (this._redisClient)
+			try {
+				await this._redisClient.setEx(
+					BinanceAdapter.PAIRS_CACHE_KEY,
+					BinanceAdapter.PAIRS_CACHE_TTL,
+					JSON.stringify(symbols)
+				);
+			} catch {
+				this.logger.warn('BinanceAdapter: Redis pairs cache write failed');
+			}
 	}
 }

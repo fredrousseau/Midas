@@ -73,6 +73,12 @@ export class DataProvider {
 			// Load persisted stats after successful connection
 			await this.cacheManager._loadPersistedStats();
 			this._isConnected = true;
+
+			// Inject Redis client into BinanceAdapter for persistent pairs cache
+			const binanceAdapter = this.dataAdapter?.binanceAdapter;
+			if (binanceAdapter?.setRedisClient)
+				binanceAdapter.setRedisClient(this._redisAdapter.client);
+
 			this.logger.info('DataProvider initialized with Redis-only cache');
 			return true;
 		} catch (err) {
@@ -293,27 +299,34 @@ export class DataProvider {
 				try {
 					let fetchedBars = [];
 
-					// Fetch bars before cached range
-					if (missing.before) {
-						const beforeCount = Math.ceil((missing.before.end - missing.before.start) / timeframeToMs(timeframe)) + 1;
-						const beforeBars = await this.dataAdapter.fetchOHLC({
-							symbol, timeframe,
-							count: Math.min(beforeCount, missingCount),
-							to: missing.before.end,
-						});
-						fetchedBars = fetchedBars.concat(beforeBars);
-					}
+					// Fetch bars before cached range (older history)
+					if (missing.before)
+						try {
+							const beforeCount = Math.ceil((missing.before.end - missing.before.start) / timeframeToMs(timeframe)) + 1;
+							const beforeBars = await this.dataAdapter.fetchOHLC({
+								symbol, timeframe,
+								count: Math.min(beforeCount, missingCount),
+								to: missing.before.end,
+							});
+							fetchedBars = fetchedBars.concat(beforeBars);
+						} catch {
+							// Older history may not be available (e.g. Yahoo Finance limited intraday history)
+							this.logger.verbose(`No additional historical bars available for ${symbol} ${timeframe} before cached range`);
+						}
 
-					// Fetch bars after cached range
-					if (missing.after) {
-						const afterCount = Math.ceil((missing.after.end - missing.after.start) / timeframeToMs(timeframe)) + 1;
-						const afterBars = await this.dataAdapter.fetchOHLC({
-							symbol, timeframe,
-							count: Math.min(afterCount, missingCount - fetchedBars.length),
-							from: missing.after.start,
-						});
-						fetchedBars = fetchedBars.concat(afterBars);
-					}
+					// Fetch bars after cached range (newer data)
+					if (missing.after)
+						try {
+							const afterCount = Math.ceil((missing.after.end - missing.after.start) / timeframeToMs(timeframe)) + 1;
+							const afterBars = await this.dataAdapter.fetchOHLC({
+								symbol, timeframe,
+								count: Math.min(afterCount, missingCount - fetchedBars.length),
+								from: missing.after.start,
+							});
+							fetchedBars = fetchedBars.concat(afterBars);
+						} catch {
+							this.logger.verbose(`No additional bars available for ${symbol} ${timeframe} after cached range`);
+						}
 
 					if (fetchedBars.length > 0) 
 						// Merge fetched bars into cache
@@ -346,8 +359,8 @@ export class DataProvider {
 						loadedAt: new Date().toISOString(),
 					};
 				} catch (_e) {
-					// If partial fetch fails, return cached data if usable (>= 50% of requested)
-					if (cachedBars.length >= count * 0.5) {
+					// If partial fetch fails, return cached data if any bars available
+					if (cachedBars.length > 0) {
 						this.logger.warn(`Smart partial fetch failed for ${symbol} (${timeframe}), returning ${cachedBars.length}/${count} cached bars`);
 						const duration = Date.now() - startTime;
 						let finalBars = cachedBars;
@@ -409,9 +422,9 @@ export class DataProvider {
 				const tfMs = timeframeToMs(timeframe);
 				cleanedData = cleanedData.filter((bar) => bar.timestamp + tfMs <= analysisTimestamp);
 
-				// If we don't have enough bars, throw an error
+				// Warn if fewer bars than requested (common with Yahoo Finance limited history)
 				if (cleanedData.length < count)
-					throw new Error(`Insufficient historical data: Symbol ${symbol} for timeframe ${timeframe} only ${cleanedData.length} bars available before ${new Date(analysisTimestamp).toISOString()} requested ${count}`);
+					this.logger.warn(`Limited historical data: ${symbol} ${timeframe} has ${cleanedData.length}/${count} bars before ${new Date(analysisTimestamp).toISOString()}`);
 
 				// Take only the last 'count' bars
 				cleanedData = cleanedData.slice(-count);

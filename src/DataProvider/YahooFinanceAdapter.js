@@ -344,7 +344,22 @@ export class YahooFinanceAdapter extends GenericAdapter {
 
 	/**
 	 * Calculate start date from end date, timeframe, and bar count.
-	 * Adds a 50% buffer to account for market closure gaps (weekends, holidays).
+	 *
+	 * Unlike Binance which accepts a `count` parameter, Yahoo Finance only accepts
+	 * a date range (period1 → period2). So we must convert the desired bar count
+	 * into a calendar duration — but stock markets don't trade 24/7:
+	 *
+	 *   - Stocks trade ~8.5h/day (e.g. Euronext 9h-17h30), 5 days/week
+	 *   - A naive "count × timeframeMs" assumes 24/7 trading (crypto-style)
+	 *   - For 250 bars of 1h with naive calc: 250h ≈ 10.4 days → only ~88 trading bars
+	 *
+	 * Buffer factors compensate for non-trading hours:
+	 *   - Intraday: 24/8.5 (nights) × 7/5 (weekends) × 1.05 (holidays) ≈ 4.2x
+	 *   - Daily+: 7/5 (weekends) × 1.05 (holidays) ≈ 1.5x
+	 *
+	 * Example: 250 bars × 1h × 4.2 = 1050h ≈ 44 calendar days → ~250 trading bars
+	 *
+	 * Yahoo Finance intraday limits: 1m=7d, 5m-30m=60d, 1h=730d
 	 *
 	 * @private
 	 * @param {Date} endDate - End of the period
@@ -354,8 +369,9 @@ export class YahooFinanceAdapter extends GenericAdapter {
 	 */
 	_calcStartDate(endDate, timeframe, count) {
 		const tfMs = timeframeToMs(timeframe, { throwOnError: false, defaultValue: 3600000 });
-		// Buffer factor: 1.7 accounts for weekends (~2/7 days) + holidays + partial candles
-		const bufferFactor = 1.7;
+
+		const isIntraday = tfMs < 86400000; // < 1 day
+		const bufferFactor = isIntraday ? 4.2 : 1.5;
 		const rangeMs = tfMs * count * bufferFactor;
 		return new Date(endDate.getTime() - rangeMs);
 	}
