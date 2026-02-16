@@ -5,7 +5,7 @@
  * It initializes and configures all core services including:
  * - OAuth authentication
  * - MCP (Model Context Protocol) service
- * - Data providers (Binance)
+ * - Data providers (Binance + Yahoo Finance via AdapterRouter)
  * - Market data, indicators, and analysis services
  * - Express server with CORS, logging, and routing
  *
@@ -30,6 +30,8 @@ import { registerRoutes } from './routes.js';
 import { hasKeys } from './Utils/helpers.js';
 
 import { BinanceAdapter } from './DataProvider/BinanceAdapter.js';
+import { YahooFinanceAdapter } from './DataProvider/YahooFinanceAdapter.js';
+import { AdapterRouter } from './DataProvider/AdapterRouter.js';
 import { DataProvider } from './DataProvider/DataProvider.js';
 
 import { MarketDataService } from './Trading/MarketData/MarketDataService.js';
@@ -131,12 +133,33 @@ const webUIAuthService = new WebUIAuthService({
 
 /**
  * Binance Data Adapter
- * Adapter for fetching data from Binance API
+ * Adapter for fetching data from Binance API (crypto pairs: BTCUSDT, ETHUSDT, …)
  * @type {BinanceAdapter}
  */
 const binanceAdapter = new BinanceAdapter({
 	logger: logger,
 	baseUrl: 'https://api.binance.com',
+});
+
+/**
+ * Yahoo Finance Data Adapter
+ * Adapter for fetching data from Yahoo Finance (stocks, ETFs, indices: MC.PA, AAPL, ^FCHI, …)
+ * @type {YahooFinanceAdapter}
+ */
+const yahooAdapter = new YahooFinanceAdapter({
+	logger: logger,
+	timeout: 15000,
+});
+
+/**
+ * Adapter Router
+ * Routes requests to BinanceAdapter or YahooFinanceAdapter based on symbol format.
+ * @type {AdapterRouter}
+ */
+const adapterRouter = new AdapterRouter({
+	binanceAdapter,
+	yahooAdapter,
+	logger,
 });
 
 /**
@@ -159,7 +182,7 @@ const redisConfig = {
  * @type {DataProvider}
  */
 const dataProvider = new DataProvider({
-	dataAdapter: binanceAdapter,
+	dataAdapter: adapterRouter,
 	logger: logger,
 	maxDataPoints: parseInt(process.env.MAX_DATA_POINTS || '5000'),
 	redisConfig: redisConfig,
