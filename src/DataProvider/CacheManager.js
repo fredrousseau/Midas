@@ -85,39 +85,39 @@ export class CacheManager {
 			return { coverage: 'none', bars: [], missing: { count, endTimestamp } };
 		}
 
-		// ✅ Redis gère le TTL - pas besoin de check manuel!
-		// Key expires automatically after ttl seconds
-
 		// If no endTimestamp specified, use the latest bar in cache
 		const requestedEnd = endTimestamp || segment.end;
 
-		// Check if requested range is within cache bounds
-		const timeframeMs = this._parseTimeframe(timeframe);
-		const requestedStart = requestedEnd - (count - 1) * timeframeMs;
-
-		// Case 1: Requested range is completely outside cache
-		if (requestedEnd < segment.start || requestedStart > segment.end) {
+		// If requestedEnd is before cache start, complete miss
+		if (requestedEnd < segment.start) {
 			await this._incrementStat('misses');
 			return { coverage: 'none', bars: [], missing: { count, endTimestamp: requestedEnd } };
 		}
 
-		// Case 2: Requested range is completely within cache
-		if (requestedStart >= segment.start && requestedEnd <= segment.end) {
-			const bars = this._extractBars(segment, requestedStart, requestedEnd, count);
-			if (bars.length === count) {
-				await this._incrementStat('hits');
-				return { coverage: 'full', bars };
-			}
+		// Extract all bars from cache start up to requestedEnd, taking last 'count'
+		// This avoids assuming continuous bars (stock data has trading hour gaps & weekends)
+		const bars = this._extractBars(segment, segment.start, requestedEnd, count);
+
+		if (bars.length === 0) {
+			await this._incrementStat('misses');
+			return { coverage: 'none', bars: [], missing: { count, endTimestamp: requestedEnd } };
 		}
 
-		// Case 3: Partial coverage
-		await this._incrementStat('partialHits');
-		const bars = this._extractBars(segment, Math.max(requestedStart, segment.start), Math.min(requestedEnd, segment.end), count);
+		if (bars.length >= count) {
+			await this._incrementStat('hits');
+			return { coverage: 'full', bars: bars.slice(-count) };
+		}
 
-		// Calculate what's missing
+		// Partial coverage — we have some bars but not enough
+		await this._incrementStat('partialHits');
+		const timeframeMs = this._parseTimeframe(timeframe);
 		const missing = {
-			before: requestedStart < segment.start ? { start: requestedStart, end: segment.start - timeframeMs } : null,
-			after: requestedEnd > segment.end ? { start: segment.end + timeframeMs, end: requestedEnd } : null,
+			before: segment.start <= bars[0].timestamp
+				? { start: bars[0].timestamp - (count - bars.length) * timeframeMs, end: segment.start - timeframeMs }
+				: null,
+			after: requestedEnd > segment.end
+				? { start: segment.end + timeframeMs, end: requestedEnd }
+				: null,
 		};
 
 		return { coverage: 'partial', bars, missing };
