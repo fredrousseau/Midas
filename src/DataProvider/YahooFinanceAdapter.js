@@ -105,9 +105,9 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		const startDate = from ? new Date(from) : this._calcStartDate(endDate, calcTimeframe, fetchCount);
 
 		if (aggregationFactor)
-			this.logger.info(`Fetching ${fetchCount} × 1h bars for ${symbol} to aggregate into ${count} × ${timeframe} bars`);
+			this.logger.info(`Yahoo: fetching ${fetchCount} × 1h bars for ${symbol} to aggregate into ${count} × ${timeframe} (${startDate.toISOString()} → ${endDate.toISOString()})`);
 		else
-			this.logger.info(`Fetching ${count} bars for ${symbol} (${timeframe} → ${yahooInterval}) from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+			this.logger.info(`Yahoo: fetching ${count} bars for ${symbol} (${timeframe} → ${yahooInterval}) (${startDate.toISOString()} → ${endDate.toISOString()})`);
 
 		try {
 			const startTime = Date.now();
