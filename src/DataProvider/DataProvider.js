@@ -156,6 +156,19 @@ export class DataProvider {
 	}
 
 	/**
+	 * Determine asset class for a symbol via the data adapter.
+	 * Falls back to 'crypto' if the adapter doesn't support getAssetClass().
+	 * @private
+	 * @param {string} symbol
+	 * @returns {'crypto'|'equity'}
+	 */
+	_getAssetClass(symbol) {
+		if (typeof this.dataAdapter?.getAssetClass === 'function')
+			return this.dataAdapter.getAssetClass(symbol);
+		return 'crypto';
+	}
+
+	/**
 	 * Fetch OHLCV data in multiple batches when count exceeds adapter limit
 	 * Works backwards from endTime, fetching batches of size adapterLimit
 	 *
@@ -278,6 +291,7 @@ export class DataProvider {
 				return {
 					symbol,
 					timeframe,
+					assetClass: this._getAssetClass(symbol),
 					count: cacheResult.bars.length,
 					bars: cacheResult.bars,
 					firstTimestamp: cacheResult.bars.at(0)?.timestamp ?? null,
@@ -347,6 +361,7 @@ export class DataProvider {
 
 					return {
 						symbol, timeframe,
+						assetClass: this._getAssetClass(symbol),
 						count: finalBars.length,
 						bars: finalBars,
 						firstTimestamp: finalBars.at(0)?.timestamp ?? null,
@@ -371,6 +386,7 @@ export class DataProvider {
 						finalBars = finalBars.slice(-count);
 						return {
 							symbol, timeframe,
+							assetClass: this._getAssetClass(symbol),
 							count: finalBars.length,
 							bars: finalBars,
 							firstTimestamp: finalBars.at(0)?.timestamp ?? null,
@@ -437,6 +453,7 @@ export class DataProvider {
 			const response = {
 				symbol,
 				timeframe,
+				assetClass: this._getAssetClass(symbol),
 				count: cleanedData.length,
 				bars: cleanedData, // Keep raw bars for internal use
 				firstTimestamp: cleanedData.at(0)?.timestamp ?? null,

@@ -127,6 +127,29 @@ export class AdapterRouter {
 	}
 
 	/**
+	 * Determine the asset class for a symbol based on which adapter resolved it.
+	 * Binance = 'crypto', Yahoo = 'equity' (with heuristic override for Yahoo crypto like BTC-USD).
+	 *
+	 * @param {string} symbol
+	 * @returns {'crypto'|'equity'}
+	 */
+	getAssetClass(symbol) {
+		const cached = this._symbolCache.get(symbol);
+
+		if (cached === 'binance') return 'crypto';
+
+		if (cached === 'yahoo') {
+			// Yahoo crypto symbols: BTC-USD, ETH-EUR, DOGE-GBP, etc.
+			if (/^[A-Z]{2,10}-(USD|EUR|GBP|JPY|BTC|ETH)$/.test(symbol)) return 'crypto';
+			return 'equity';
+		}
+
+		// Not yet resolved — use format heuristic (same logic as _resolvePrimary)
+		if (/^[A-Z0-9]+$/.test(symbol)) return 'crypto';
+		return 'equity';
+	}
+
+	/**
 	 * Get current price — delegates to the appropriate adapter with fallback.
 	 *
 	 * @param {string} symbol

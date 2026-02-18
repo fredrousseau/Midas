@@ -280,8 +280,9 @@ export class VolatilityEnricher {
 		const currentVol = rollingVol[rollingVol.length - 1];
 		const percentile = this._getPercentile(currentVol, rollingVol);
 
-		// Annualized volatility (approximate: sqrt(365) for crypto, sqrt(252) for stocks)
-		const annualized = round(currentVol * Math.sqrt(365) * 100, 1);
+		// Annualized volatility: 365 trading days for crypto (24/7), 252 for equities
+		const tradingDaysPerYear = ohlcvData.assetClass === 'equity' ? 252 : 365;
+		const annualized = round(currentVol * Math.sqrt(tradingDaysPerYear) * 100, 1);
 
 		let interpretation;
 		if (percentile > 0.9)
