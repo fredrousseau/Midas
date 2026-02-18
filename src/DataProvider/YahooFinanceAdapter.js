@@ -17,8 +17,8 @@ import { timeframeToMs } from '#utils/timeframe.js';
  *
  * Timeframe mapping (Midas → Yahoo Finance intervals):
  *   1m → 1m   | 5m → 5m   | 15m → 15m | 30m → 30m
- *   1h → 60m  | 2h → (not supported, falls back to 1h)
- *   4h → (not supported, falls back to 1h)
+ *   1h → 60m  | 2h → aggregated from 1h bars
+ *   4h → aggregated from 1h bars
  *   1d → 1d   | 1w → 1wk  | 1M → 1mo
  *
  * Limitations vs Binance:
@@ -45,6 +45,12 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		{ symbol: '^DJI',      name: 'Dow Jones',      exchange: 'INDEX', type: 'INDEX', quoteAsset: 'USD', status: 'TRADING' },
 	];
 
+	// Timeframes that Yahoo doesn't support natively — we aggregate from 1h data
+	static AGGREGATED_TIMEFRAMES = {
+		'2h': 2,  // aggregate 2 × 1h bars
+		'4h': 4,  // aggregate 4 × 1h bars
+	};
+
 	// Mapping from Midas timeframe format to Yahoo Finance interval strings
 	static TIMEFRAME_MAP = {
 		'1m':  '1m',
@@ -52,8 +58,8 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		'15m': '15m',
 		'30m': '30m',
 		'1h':  '60m',
-		'2h':  '60m',  // Yahoo doesn't support 2h — falls back to 1h
-		'4h':  '60m',  // Yahoo doesn't support 4h — falls back to 1h
+		'2h':  '60m',  // fetched as 1h, then aggregated
+		'4h':  '60m',  // fetched as 1h, then aggregated
 		'1d':  '1d',
 		'1w':  '1wk',
 		'1M':  '1mo',
@@ -86,19 +92,22 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		this._validateTimeframe(timeframe, YahooFinanceAdapter.VALID_TIMEFRAMES);
 		this._validateLimit(count, YahooFinanceAdapter.MAX_LIMIT);
 
+		const aggregationFactor = YahooFinanceAdapter.AGGREGATED_TIMEFRAMES[timeframe];
 		const yahooInterval = YahooFinanceAdapter.TIMEFRAME_MAP[timeframe];
 
-		// Warn when timeframe is approximated
-		if ((timeframe === '2h' || timeframe === '4h') && !this._warned2h4h) {
-			this.logger.warn(`YahooFinanceAdapter: timeframe '${timeframe}' is not supported by Yahoo Finance — using 60m instead`);
-			this._warned2h4h = true;
-		}
+		// For aggregated timeframes (2h, 4h), we need more 1h bars
+		const fetchCount = aggregationFactor ? count * aggregationFactor + aggregationFactor : count;
 
 		// Calculate date range from count + to/from
 		const endDate = to ? new Date(to) : new Date();
-		const startDate = from ? new Date(from) : this._calcStartDate(endDate, timeframe, count);
+		// Use '1h' for start date calc when aggregating, so the buffer is correct for the actual fetch interval
+		const calcTimeframe = aggregationFactor ? '1h' : timeframe;
+		const startDate = from ? new Date(from) : this._calcStartDate(endDate, calcTimeframe, fetchCount);
 
-		this.logger.info(`Fetching ${count} bars for ${symbol} (${timeframe} → ${yahooInterval}) from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+		if (aggregationFactor)
+			this.logger.info(`Fetching ${fetchCount} × 1h bars for ${symbol} to aggregate into ${count} × ${timeframe} bars`);
+		else
+			this.logger.info(`Fetching ${count} bars for ${symbol} (${timeframe} → ${yahooInterval}) from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
 		try {
 			const startTime = Date.now();
@@ -115,7 +124,7 @@ export class YahooFinanceAdapter extends GenericAdapter {
 				throw new Error(`No data returned by Yahoo Finance for ${symbol} (${yahooInterval})`);
 
 			// Transform Yahoo Finance format to standard OHLCV format
-			const ohlcv = result.quotes
+			let ohlcv = result.quotes
 				.filter(q => q.open !== null && q.high !== null && q.low !== null && q.close !== null && q.volume !== null)
 				.map(q => ({
 					timestamp: new Date(q.date).getTime(),
@@ -130,12 +139,19 @@ export class YahooFinanceAdapter extends GenericAdapter {
 			if (ohlcv.length === 0)
 				throw new Error(`All bars for ${symbol} had null values — symbol may be delisted or invalid`);
 
+			// Aggregate 1h bars into 2h/4h if needed
+			if (aggregationFactor) {
+				ohlcv = this._aggregateBars(ohlcv, aggregationFactor, symbol);
+				this.logger.info(`YahooFinanceAdapter: aggregated ${result.quotes.length} × 1h bars into ${ohlcv.length} × ${timeframe} bars for ${symbol} in ${duration}ms`);
+			}
+
 			// Take only the last `count` bars to match expected behavior
 			const trimmed = ohlcv.slice(-count);
 
 			this._validateOHLCV(trimmed);
 
-			this.logger.info(`YahooFinanceAdapter: fetched ${trimmed.length} bars for ${symbol} in ${duration}ms`);
+			if (!aggregationFactor)
+				this.logger.info(`YahooFinanceAdapter: fetched ${trimmed.length} bars for ${symbol} in ${duration}ms`);
 
 			return trimmed;
 		} catch (error) {
@@ -340,6 +356,75 @@ export class YahooFinanceAdapter extends GenericAdapter {
 		];
 
 		return [...equities, ...YahooFinanceAdapter.INDICES];
+	}
+
+	/**
+	 * Aggregate 1h OHLCV bars into higher timeframe bars (2h, 4h).
+	 *
+	 * Groups consecutive 1h bars by the target timeframe boundary, then merges
+	 * each group into a single OHLCV bar:
+	 *   - timestamp: start of the period (first bar's timestamp)
+	 *   - open: first bar's open
+	 *   - high: max high across the group
+	 *   - low: min low across the group
+	 *   - close: last bar's close
+	 *   - volume: sum of all volumes
+	 *
+	 * Incomplete groups (fewer bars than aggregationFactor) at the end are kept
+	 * as-is so the most recent data is not lost.
+	 *
+	 * @private
+	 * @param {Array} bars - Array of 1h OHLCV bars (sorted by timestamp asc)
+	 * @param {number} factor - Number of 1h bars per aggregated bar (2 or 4)
+	 * @param {string} symbol - Symbol (included in output bars)
+	 * @returns {Array} Aggregated OHLCV bars
+	 */
+	_aggregateBars(bars, factor, symbol) {
+		if (bars.length === 0) return [];
+
+		const periodMs = factor * 3600000; // factor × 1 hour
+		const aggregated = [];
+		let group = [];
+		let groupStart = null;
+
+		for (const bar of bars) {
+			// Determine which period this bar belongs to by flooring its timestamp
+			const period = Math.floor(bar.timestamp / periodMs) * periodMs;
+
+			if (groupStart !== null && period !== groupStart) {
+				// Flush the current group
+				aggregated.push(this._mergeGroup(group, symbol));
+				group = [];
+			}
+
+			groupStart = period;
+			group.push(bar);
+		}
+
+		// Flush the last group (may be incomplete — that's fine)
+		if (group.length > 0)
+			aggregated.push(this._mergeGroup(group, symbol));
+
+		return aggregated;
+	}
+
+	/**
+	 * Merge a group of OHLCV bars into a single bar.
+	 * @private
+	 * @param {Array} group - Array of OHLCV bars to merge
+	 * @param {string} symbol - Symbol
+	 * @returns {Object} Merged OHLCV bar
+	 */
+	_mergeGroup(group, symbol) {
+		return {
+			timestamp: group[0].timestamp,
+			open:      group[0].open,
+			high:      Math.max(...group.map(b => b.high)),
+			low:       Math.min(...group.map(b => b.low)),
+			close:     group[group.length - 1].close,
+			volume:    group.reduce((sum, b) => sum + b.volume, 0),
+			symbol,
+		};
 	}
 
 	/**
