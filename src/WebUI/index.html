@@ -976,6 +976,108 @@
 			color: var(--text-secondary);
 			font-size: 12px;
 		}
+
+		/* ── Cache Tab ─────────────────────────────────────────────── */
+		.cache-stats-summary {
+			display: flex;
+			gap: 20px;
+			padding: 4px 0;
+		}
+
+		.cache-stat {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 2px;
+		}
+
+		.cache-stat-value {
+			font-size: 18px;
+			font-weight: 600;
+			color: var(--text-bright);
+		}
+
+		.cache-stat-label {
+			font-size: 11px;
+			color: var(--text-secondary);
+			text-transform: uppercase;
+		}
+
+		.cache-table-container {
+			margin: 16px;
+			overflow-x: auto;
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-lg);
+		}
+
+		.cache-table {
+			width: 100%;
+			border-collapse: collapse;
+			font-size: 13px;
+		}
+
+		.cache-table th {
+			text-align: left;
+			padding: 10px 12px;
+			border-bottom: 1px solid var(--border-strong);
+			color: var(--text-secondary);
+			font-weight: 500;
+			font-size: 11px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			background: var(--bg-tertiary);
+		}
+
+		.cache-table td {
+			padding: 8px 12px;
+			border-bottom: 1px solid var(--border-default);
+			color: var(--text-primary);
+		}
+
+		.cache-table tbody tr:hover {
+			background: var(--bg-elevated);
+		}
+
+		.cache-table .text-mono {
+			font-family: var(--font-mono);
+			font-size: 12px;
+		}
+
+		.cache-empty {
+			text-align: center;
+			padding: 40px 20px;
+			color: var(--text-muted);
+		}
+
+		.btn-danger {
+			background: var(--negative);
+			color: white;
+			border: none;
+			padding: 8px 16px;
+			border-radius: var(--radius-md);
+			cursor: pointer;
+			font-size: 13px;
+			transition: opacity var(--transition);
+		}
+
+		.btn-danger:hover {
+			opacity: 0.85;
+		}
+
+		.btn-delete-entry {
+			background: none;
+			border: 1px solid var(--negative);
+			color: var(--negative);
+			padding: 4px 10px;
+			border-radius: var(--radius-sm);
+			cursor: pointer;
+			font-size: 12px;
+			transition: background var(--transition);
+		}
+
+		.btn-delete-entry:hover {
+			background: var(--negative-subtle);
+		}
 	</style>
 </head>
 <body>
@@ -992,6 +1094,7 @@
 				<div class="tab-navigation">
 					<button class="tab-btn active" data-tab="charts">📈 Graphiques</button>
 					<button class="tab-btn" data-tab="webhook">🔗 Webhook</button>
+					<button class="tab-btn" data-tab="cache">💾 Cache</button>
 				</div>
 
 				<!-- Indicator Stats (only for charts tab) -->
@@ -1154,6 +1257,48 @@
 				</div>
 			</div>
 
+			<!-- Cache Tab -->
+			<div id="cacheTab" class="tab-content">
+				<div id="cacheStatus" class="status"></div>
+
+				<div class="controls">
+					<div class="control-group">
+						<label>Statistiques</label>
+						<div class="cache-stats-summary" id="cacheStatsSummary">
+							<span class="text-muted">Chargement...</span>
+						</div>
+					</div>
+					<div class="control-group">
+						<label>Actions</label>
+						<button id="cacheRefreshBtn">Rafraichir</button>
+					</div>
+					<div class="control-group">
+						<label>&nbsp;</label>
+						<button id="cacheClearAllBtn" class="btn-danger">Vider tout le cache</button>
+					</div>
+				</div>
+
+				<div class="cache-table-container">
+					<table class="cache-table" id="cacheTable">
+						<thead>
+							<tr>
+								<th>Symbol</th>
+								<th>Timeframe</th>
+								<th>Barres</th>
+								<th>Debut</th>
+								<th>Fin</th>
+								<th>Age</th>
+								<th>TTL</th>
+								<th>Action</th>
+							</tr>
+						</thead>
+						<tbody id="cacheTableBody">
+							<tr><td colspan="8" class="cache-empty">Chargement...</td></tr>
+						</tbody>
+					</table>
+				</div>
+			</div>
+
 		</main>
 
 		<!-- Data Panel (charts only) -->
@@ -1174,6 +1319,7 @@
 	<script src="indicators-ui.js"></script>
 	<script src="data-panel.js"></script>
 	<script src="app.js"></script>
+	<script src="cache-manager.js"></script>
 	<script src="tab-manager.js"></script>
 	<script>
 		document.addEventListener('DOMContentLoaded', () => {

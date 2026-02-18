@@ -7,7 +7,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabButtons = document.querySelectorAll('.tab-btn');
     const tabContents = {
         charts: document.getElementById('chartsTab'),
-        webhook: document.getElementById('webhookTab')
+        webhook: document.getElementById('webhookTab'),
+        cache: document.getElementById('cacheTab')
     };
 
     // Elements to hide/show based on active tab (charts-only sidebar elements)
