@@ -693,10 +693,11 @@ export class RegimeDetectionService {
 				return 0.5 + ((erValue - thresholds.er.trending) / (highERThreshold - thresholds.er.trending)) * 0.5;
 			return 0.3;
 		} else if (regimeType === 'breakout') {
-			// For breakout: intermediate ER is acceptable
-			if (erValue >= 0.6) return 1.0;
-			if (erValue >= 0.4) return 0.8;
-			if (erValue >= 0.3) return 0.6;
+			// For breakout: intermediate ER is acceptable (adaptive thresholds)
+			const breakoutHigh = thresholds.er.trending + 0.1;
+			if (erValue >= breakoutHigh) return 1.0;
+			if (erValue >= thresholds.er.trending) return 0.8;
+			if (erValue >= thresholds.er.choppy) return 0.6;
 			return 0.4;
 		} else {
 			// For range: lower ER = higher score
@@ -807,10 +808,11 @@ export class RegimeDetectionService {
 		if (currentPrice > emaShortValue && emaShortValue > emaLongValue) direction = 'bullish';
 		else if (currentPrice < emaShortValue && emaShortValue < emaLongValue) direction = 'bearish';
 
-		// DI confirmation filter
+		// DI confirmation: only downgrade if DI strongly contradicts EMA direction
 		if (plusDI !== null && plusDI !== undefined && minusDI !== null && minusDI !== undefined) {
-			if (direction === 'bullish' && plusDI < minusDI) direction = 'neutral';
-			if (direction === 'bearish' && minusDI < plusDI) direction = 'neutral';
+			const diSpread = Math.abs(plusDI - minusDI);
+			if (direction === 'bullish' && plusDI < minusDI && diSpread > 10) direction = 'neutral';
+			if (direction === 'bearish' && minusDI < plusDI && diSpread > 10) direction = 'neutral';
 		}
 
 		const directionStrength = atrLongValue < 1e-12 ? 0 : Math.max(-2, Math.min(2, (emaShortValue - emaLongValue) / atrLongValue));
@@ -855,6 +857,9 @@ export class RegimeDetectionService {
 			} else if (adxSlope.phase === 'mature') {
 				qualityScore += 10;
 				qualityFactors.push('trend_mature');
+			} else if (adxSlope.phase === 'exhausted') {
+				qualityScore -= 15;
+				qualityFactors.push('trend_exhausted');
 			}
 
 			if (direction !== 'neutral') {
@@ -890,8 +895,10 @@ export class RegimeDetectionService {
 			else if (adxValue > thresholds.adx.trending) regimeClarityScore = 0.7;
 			else if (adxValue > thresholds.adx.weak) regimeClarityScore = 0.5;
 		} else {
+			// Range regimes: low ADX = clear range, but high-ADX range (directional range) is also valid
 			if (adxValue < thresholds.adx.weak) regimeClarityScore = 0.8;
 			else if (adxValue < thresholds.adx.trending) regimeClarityScore = 0.6;
+			else if (rangeType === 'directional') regimeClarityScore = 0.7;
 			else regimeClarityScore = 0.4;
 		}
 

@@ -359,11 +359,11 @@ export class PatternDetector {
 
 		// Find neckline (support between shoulders)
 		// Adjust indices to match original bars array
-		const startIdx = L.index + offset;
-		const endIdx = R.index + offset;
-		const neckline = Math.min(
-			...bars.slice(startIdx, endIdx + 1).map(b => b.low)
-		);
+		const startIdx = Math.max(0, L.index + offset);
+		const endIdx = Math.min(bars.length - 1, R.index + offset);
+		const slicedBars = bars.slice(startIdx, endIdx + 1);
+		if (slicedBars.length === 0) return null;
+		const neckline = Math.min(...slicedBars.map(b => b.low));
 
 		return {
 			pattern: 'head and shoulders',
@@ -397,11 +397,11 @@ export class PatternDetector {
 			// Peaks within 2% of each other
 			if (Math.abs(A.price - B.price) / A.price < 0.02) {
 				// Adjust indices to match original bars array
-				const startIdx = A.index + offset;
-				const endIdx = B.index + offset;
-				const supportLevel = Math.min(
-					...bars.slice(startIdx, endIdx + 1).map(b => b.low)
-				);
+				const startIdx = Math.max(0, A.index + offset);
+				const endIdx = Math.min(bars.length - 1, B.index + offset);
+				const slicedBars = bars.slice(startIdx, endIdx + 1);
+				if (slicedBars.length === 0) return null;
+				const supportLevel = Math.min(...slicedBars.map(b => b.low));
 
 				return {
 					pattern: 'double top',
@@ -425,11 +425,11 @@ export class PatternDetector {
 			// Troughs within 2% of each other
 			if (Math.abs(A.price - B.price) / A.price < 0.02) {
 				// Adjust indices to match original bars array
-				const startIdx = A.index + offset;
-				const endIdx = B.index + offset;
-				const resistanceLevel = Math.max(
-					...bars.slice(startIdx, endIdx + 1).map(b => b.high)
-				);
+				const startIdx = Math.max(0, A.index + offset);
+				const endIdx = Math.min(bars.length - 1, B.index + offset);
+				const slicedBars = bars.slice(startIdx, endIdx + 1);
+				if (slicedBars.length === 0) return null;
+				const resistanceLevel = Math.max(...slicedBars.map(b => b.high));
 
 				// Invalidation should be below the bottoms, not above
 				const invalidationLevel = Math.min(A.price, B.price);

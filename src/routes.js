@@ -175,13 +175,20 @@ export function registerRoutes(parameters) {
 
 	// ========== Channel : MCP / Type : Inventory / Global Handlder ==========
 
-	app.get('/api/v1/mcp/tools', (req, res) => {
-		logger.info('GET /api/v1/mcp/tools - Returning registered tools');
-		res.json({ tools: mcpService.getTools() });
-	});
+	app.get(
+		'/api/v1/mcp/tools',
+		asyncHandler(async () => {
+			logger.info('GET /api/v1/mcp/tools - Returning registered tools');
+			return { tools: mcpService.getTools() };
+		})
+	);
 
-	app.post('/api/v1/mcp', async (req, res) => {
-		await mcpService.handleRequest(req, res);
+	app.post('/api/v1/mcp', async (req, res, next) => {
+		try {
+			await mcpService.handleRequest(req, res);
+		} catch (error) {
+			next(error);
+		}
 	});
 
 	// ========== Channel : API / Type : MARKET DATA ==========
@@ -316,13 +323,21 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
+			let parsedConfig = {};
+			if (config)
+				try { parsedConfig = JSON.parse(config); } catch {
+					const error = new Error('Invalid JSON in config parameter');
+					error.statusCode = 400;
+					throw error;
+				}
+
 			return await indicatorService.getIndicatorTimeSeries({
 				symbol,
 				indicator: name,
 				timeframe,
 				bars,
 				referenceDate,
-				config: config ? JSON.parse(config) : {},
+				config: parsedConfig,
 			});
 		})
 	);

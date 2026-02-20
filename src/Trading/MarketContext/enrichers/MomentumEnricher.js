@@ -151,12 +151,13 @@ export class MomentumEnricher {
 
 		// Interpretation
 		let interpretation;
-		if (macd > signal && histogram > 0) 
-			interpretation = histogram > histogramValues[histogramValues.length - 2] 
-				? 'strong bullish momentum (expanding)' 
+		const prevHistogram = histogramValues.length >= 2 ? histogramValues[histogramValues.length - 2] : null;
+		if (macd > signal && histogram > 0)
+			interpretation = prevHistogram !== null && histogram > prevHistogram
+				? 'strong bullish momentum (expanding)'
 				: 'bullish momentum';
-		 else if (macd < signal && histogram < 0) 
-			interpretation = histogram < histogramValues[histogramValues.length - 2]
+		 else if (macd < signal && histogram < 0)
+			interpretation = prevHistogram !== null && histogram < prevHistogram
 				? 'strong bearish momentum (expanding)'
 				: 'bearish momentum';
 		 else 
@@ -237,9 +238,9 @@ export class MomentumEnricher {
 	 */
 	_calculateROC(closes) {
 		const current = closes[closes.length - 1];
-		
-		const roc5 = this._roc(current, closes[closes.length - 6]);
-		const roc10 = this._roc(current, closes[closes.length - 11]);
+
+		const roc5 = closes.length >= 6 ? this._roc(current, closes[closes.length - 6]) : 0;
+		const roc10 = closes.length >= 11 ? this._roc(current, closes[closes.length - 11]) : 0;
 
 		let interpretation;
 		if (roc5 > 2 && roc10 > 2) 
@@ -321,16 +322,29 @@ export class MomentumEnricher {
 	 * Detect MACD divergence with price
 	 */
 	_detectMACDDivergence(macdValues, priceValues) {
-		if (macdValues.length < 10 || priceValues.length < 10) 
+		if (macdValues.length < 10 || priceValues.length < 10)
 			return 'aligned';
 
-		const macdTrend = macdValues[macdValues.length - 1] - macdValues[0];
-		const priceTrend = priceValues[priceValues.length - 1] - priceValues[0];
+		const pricePeaks = this._findPeaks(priceValues);
+		const macdPeaks = this._findPeaks(macdValues);
+		const priceTroughs = this._findTroughs(priceValues);
+		const macdTroughs = this._findTroughs(macdValues);
 
-		if (macdTrend < 0 && priceTrend > 0) 
-			return 'bearish divergence';
-		 else if (macdTrend > 0 && priceTrend < 0) 
-			return 'bullish divergence';
+		// Bearish divergence: price makes higher highs, MACD makes lower highs
+		if (pricePeaks.length >= 2 && macdPeaks.length >= 2) {
+			const priceRising = pricePeaks[pricePeaks.length - 1] > pricePeaks[pricePeaks.length - 2];
+			const macdFalling = macdPeaks[macdPeaks.length - 1] < macdPeaks[macdPeaks.length - 2];
+			if (priceRising && macdFalling)
+				return 'bearish divergence';
+		}
+
+		// Bullish divergence: price makes lower lows, MACD makes higher lows
+		if (priceTroughs.length >= 2 && macdTroughs.length >= 2) {
+			const priceFalling = priceTroughs[priceTroughs.length - 1] < priceTroughs[priceTroughs.length - 2];
+			const macdRising = macdTroughs[macdTroughs.length - 1] > macdTroughs[macdTroughs.length - 2];
+			if (priceFalling && macdRising)
+				return 'bullish divergence';
+		}
 
 		return 'aligned (no divergence)';
 	}

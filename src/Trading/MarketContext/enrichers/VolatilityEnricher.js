@@ -260,10 +260,11 @@ export class VolatilityEnricher {
 		const closes = ohlcvData.bars.map(b => b.close);
 		if (closes.length < STATISTICAL_PERIODS.long + 1) return null;
 
-		// Calculate log returns
+		// Calculate log returns (skip invalid prices)
 		const logReturns = [];
 		for (let i = 1; i < closes.length; i++)
-			logReturns.push(Math.log(closes[i] / closes[i - 1]));
+			if (closes[i] > 0 && closes[i - 1] > 0)
+				logReturns.push(Math.log(closes[i] / closes[i - 1]));
 
 		// Rolling volatility (std dev of log returns) over a 20-bar window
 		const window = STATISTICAL_PERIODS.short;

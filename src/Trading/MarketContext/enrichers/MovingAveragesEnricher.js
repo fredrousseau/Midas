@@ -216,11 +216,10 @@ export class MovingAveragesEnricher {
 		const recent26 = ema26.slice(-STATISTICAL_PERIODS.short);
 		const recent50 = ema50.slice(-STATISTICAL_PERIODS.short);
 
-		// Calculate slopes normalized as percentage per bar
-		const avgPrice = recent12[recent12.length - 1] || 1;
-		const slope12 = this._getSimpleSlope(recent12) / avgPrice;
-		const slope26 = this._getSimpleSlope(recent26) / avgPrice;
-		const slope50 = this._getSimpleSlope(recent50) / avgPrice;
+		// Calculate slopes normalized as percentage per bar (each relative to its own EMA value)
+		const slope12 = this._getSimpleSlope(recent12) / (recent12[recent12.length - 1] || 1);
+		const slope26 = this._getSimpleSlope(recent26) / (recent26[recent26.length - 1] || 1);
+		const slope50 = this._getSimpleSlope(recent50) / (recent50[recent50.length - 1] || 1);
 
 		// Check if slopes are similar (parallel) — threshold is 0.05% per bar
 		const diff12_26 = Math.abs(slope12 - slope26);

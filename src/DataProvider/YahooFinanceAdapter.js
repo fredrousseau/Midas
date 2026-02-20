@@ -142,6 +142,11 @@ export class YahooFinanceAdapter extends GenericAdapter {
 			// Aggregate 1h bars into 2h/4h if needed
 			if (aggregationFactor) {
 				ohlcv = this._aggregateBars(ohlcv, aggregationFactor, symbol);
+				// Drop first bar if incomplete (may not align to period boundary)
+				if (ohlcv.length > 1 && ohlcv[0]._groupSize < aggregationFactor)
+					ohlcv = ohlcv.slice(1);
+				// Clean internal metadata
+				ohlcv.forEach(b => delete b._groupSize);
 				this.logger.info(`YahooFinanceAdapter: aggregated ${result.quotes.length} × 1h bars into ${ohlcv.length} × ${timeframe} bars for ${symbol} in ${duration}ms`);
 			}
 
@@ -424,6 +429,7 @@ export class YahooFinanceAdapter extends GenericAdapter {
 			close:     group[group.length - 1].close,
 			volume:    group.reduce((sum, b) => sum + b.volume, 0),
 			symbol,
+			_groupSize: group.length,
 		};
 	}
 

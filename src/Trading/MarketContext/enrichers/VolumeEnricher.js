@@ -178,7 +178,8 @@ export class VolumeEnricher {
 
 		const first = obvValues[0];
 		const last = obvValues[obvValues.length - 1];
-		const change = ((last - first) / Math.abs(first)) * 100;
+		const absFirst = Math.abs(first);
+		const change = absFirst > 0 ? ((last - first) / absFirst) * 100 : 0;
 
 		let direction, description;
 		

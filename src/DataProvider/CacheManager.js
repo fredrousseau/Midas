@@ -111,9 +111,12 @@ export class CacheManager {
 		// Partial coverage — we have some bars but not enough
 		await this._incrementStat('partialHits');
 		const timeframeMs = this._parseTimeframe(timeframe);
+		const missingBefore = count - bars.length;
+		const beforeStart = bars[0].timestamp - missingBefore * timeframeMs;
+		const beforeEnd = segment.start - timeframeMs;
 		const missing = {
-			before: segment.start <= bars[0].timestamp
-				? { start: bars[0].timestamp - (count - bars.length) * timeframeMs, end: segment.start - timeframeMs }
+			before: (missingBefore > 0 && beforeStart < beforeEnd)
+				? { start: beforeStart, end: beforeEnd }
 				: null,
 			after: requestedEnd > segment.end
 				? { start: segment.end + timeframeMs, end: requestedEnd }
