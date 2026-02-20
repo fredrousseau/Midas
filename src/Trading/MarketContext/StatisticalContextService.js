@@ -412,10 +412,17 @@ export class StatisticalContextService {
 		const supportLevels = [];
 
 		if (enriched.moving_averages?.ema) {
-			const { ema12, ema26, ema50 } = enriched.moving_averages.ema;
+			const { ema12, ema26, ema50, ema200 } = enriched.moving_averages.ema;
 			if (ema12) (ema12 < currentPrice ? supportLevels : resistanceLevels).push({ level: ema12, type: 'ema12', strength: 'weak' });
 			if (ema26) (ema26 < currentPrice ? supportLevels : resistanceLevels).push({ level: ema26, type: 'ema26', strength: 'medium' });
 			if (ema50) (ema50 < currentPrice ? supportLevels : resistanceLevels).push({ level: ema50, type: 'ema50', strength: 'strong' });
+			if (ema200) (ema200 < currentPrice ? supportLevels : resistanceLevels).push({ level: ema200, type: 'ema200', strength: 'strong' });
+		}
+
+		if (enriched.volatility_indicators?.bollinger_bands) {
+			const { upper, lower } = enriched.volatility_indicators.bollinger_bands;
+			if (upper && upper > currentPrice) resistanceLevels.push({ level: upper, type: 'bollinger upper', strength: 'medium' });
+			if (lower && lower < currentPrice) supportLevels.push({ level: lower, type: 'bollinger lower', strength: 'medium' });
 		}
 
 		if (enriched.price_action?.swing_points) {
@@ -430,8 +437,8 @@ export class StatisticalContextService {
 		supportLevels.forEach((s) => (s.distance = `-${Math.round(((currentPrice - s.level) / currentPrice) * 10000) / 100}%`));
 
 		return {
-			resistance_levels: resistanceLevels.slice(0, 3),
-			support_levels: supportLevels.slice(0, 3),
+			resistance_levels: resistanceLevels.slice(0, 5),
+			support_levels: supportLevels.slice(0, 5),
 			nearest_zone: supportLevels.length > 0 ? `support at ${supportLevels[0].level} (${supportLevels[0].type})` : 'no nearby support',
 		};
 	}
