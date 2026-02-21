@@ -608,6 +608,10 @@
 			gap: 8px;
 		}
 
+		.control-group.compact {
+			max-width: 110px;
+		}
+
 		.controls label {
 			font-size: 11px;
 			color: var(--text-secondary);
@@ -1219,8 +1223,8 @@
 						<input type="datetime-local" id="webhookReferenceDate" placeholder="Laisser vide pour temps réel">
 					</div>
 
-					<div class="control-group">
-						<label for="webhookLong">Long Timeframe</label>
+					<div class="control-group compact">
+						<label for="webhookLong">Long TF</label>
 						<select id="webhookLong">
 							<option value="1w">1 semaine</option>
 							<option value="1d" selected>1 jour</option>
@@ -1228,8 +1232,8 @@
 						</select>
 					</div>
 
-					<div class="control-group">
-						<label for="webhookMedium">Medium Timeframe</label>
+					<div class="control-group compact">
+						<label for="webhookMedium">Medium TF</label>
 						<select id="webhookMedium">
 							<option value="12h">12 heures</option>
 							<option value="4h" selected>4 heures</option>
@@ -1237,8 +1241,8 @@
 						</select>
 					</div>
 
-					<div class="control-group">
-						<label for="webhookShort">Short Timeframe</label>
+					<div class="control-group compact">
+						<label for="webhookShort">Short TF</label>
 						<select id="webhookShort">
 							<option value="1h" selected>1 heure</option>
 							<option value="15m">15 minutes</option>
@@ -1249,7 +1253,7 @@
 
 					<div class="control-group">
 						<label>Action</label>
-						<button id="webhookCallBtn">Appeler le Webhook</button>
+						<button id="webhookCallBtn">Go</button>
 					</div>
 				</div>
 
