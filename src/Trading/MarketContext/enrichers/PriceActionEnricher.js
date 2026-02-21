@@ -272,7 +272,7 @@ export class PriceActionEnricher {
 		let highIndex = 0;
 		let lowIndex = 0;
 
-		for (let i = 1; i < Math.min(bars.length, STATISTICAL_PERIODS.short); i++) {
+		for (let i = 1; i < bars.length; i++) {
 			if (bars[i].high > recentHigh) {
 				recentHigh = bars[i].high;
 				highIndex = i;
@@ -400,9 +400,8 @@ export class PriceActionEnricher {
 		const highs = bars.map(b => b.high);
 		const lows = bars.map(b => b.low);
 
-		// Recent high/low (last 10 bars)
-		const recentHigh = Math.max(...highs.slice(-PATTERN_PERIODS.microPattern));
-		const recentLow = Math.min(...lows.slice(-PATTERN_PERIODS.microPattern));
+		const recentHigh = Math.max(...highs);
+		const recentLow = Math.min(...lows);
 		
 		return {
 			upside: round(recentHigh, 0),

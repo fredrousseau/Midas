@@ -30,7 +30,7 @@ export class MovingAveragesEnricher {
 	 * Enrich moving averages with detailed analysis
 	 * USES EXISTING CALCULATIONS from indicatorService (like all other enrichers)
 	 *
-	 * @param {Object} ohlcvData - OHLCV bars data (for consistency with other enrichers)
+	 * @param {Object} _ohlcvData - OHLCV bars data (unused, included for interface consistency)
 	 * @param {Object} indicatorService - Indicator service to fetch calculations
 	 * @param {string} symbol - Symbol to analyze
 	 * @param {string} timeframe - Timeframe to analyze

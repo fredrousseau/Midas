@@ -44,9 +44,17 @@ function createAuthMiddleware(oauthService) {
 
 /**
  * Register all routes
- * @param {Express} app - Express application
- * @param {Object} logger - Logger instance
- 
+ * @param {Object} parameters - Configuration object
+ * @param {Express} parameters.app - Express application instance
+ * @param {Object} parameters.dataProvider - Data provider instance
+ * @param {Object} parameters.indicatorService - Indicator service instance
+ * @param {Object} parameters.marketDataService - Market data service instance
+ * @param {Object} parameters.marketContextService - Market context service instance
+ * @param {Object} parameters.logger - Logger instance
+ * @param {Object} parameters.oauthService - OAuth service instance
+ * @param {Object} parameters.webUIAuthService - WebUI auth service instance
+ * @param {Object} parameters.mcpService - MCP service instance
+ * @param {boolean} parameters.isSecuredServer - Whether server requires authentication
  */
 
 export function registerRoutes(parameters) {

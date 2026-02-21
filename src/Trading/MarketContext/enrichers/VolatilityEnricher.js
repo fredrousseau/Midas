@@ -59,7 +59,6 @@ export class VolatilityEnricher {
 	}
 
 	/**
-	/**
 	 * Get adaptive bar count based on timeframe
 	 * Uses centralized configuration from config/barCounts.js
 	 */
