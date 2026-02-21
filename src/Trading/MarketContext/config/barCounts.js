@@ -71,9 +71,9 @@ export const INDICATOR_DEFAULT = 150;
 
 /**
  * Bar counts for EMA200 calculations
- * Requires more historical data due to the long period (200)
- *
- * Formula: At least 200 bars + 50 bars margin for warmup
+ * These define the number of OUTPUT bars requested from getIndicatorTimeSeries.
+ * The indicator engine automatically adds warmup bars (period * 2 * 1.2) on top,
+ * so these values do NOT need to exceed the warmup requirement.
  */
 export const EMA200_BAR_COUNTS = {
 	'5m': 250,
