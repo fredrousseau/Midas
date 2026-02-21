@@ -683,10 +683,18 @@ const _mainSymbolAc = attachSymbolAutocomplete(
 );
 
 function resolveBenchmark(symbol) {
+	// European equities
 	if (symbol.endsWith('.PA')) return '^FCHI';
 	if (symbol.endsWith('.L'))  return '^FTSE';
 	if (symbol.endsWith('.DE')) return '^GDAXI';
-	if (/^[A-Z0-9]+$/.test(symbol)) return 'BTCUSDT';
+	if (symbol.endsWith('.AS')) return '^AEX';
+	if (symbol.endsWith('.MI')) return '^FTSEMIB';
+	if (symbol.endsWith('.MC')) return '^IBEX';
+	if (symbol.endsWith('.SW')) return '^SSMI';
+	// Crypto (Binance-style pairs with quote currency suffix)
+	if (/^[A-Z0-9]+(USDT|USDC|BUSD|FDUSD|BTC|ETH|BNB)$/.test(symbol)) return 'BTCUSDT';
+	// US equities / NASDAQ-listed
+	if (/^[A-Z]{1,5}$/.test(symbol)) return '^GSPC';
 	return '^GSPC';
 }
 
