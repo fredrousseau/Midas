@@ -139,6 +139,16 @@ export class YahooFinanceAdapter extends GenericAdapter {
 			if (ohlcv.length === 0)
 				throw new Error(`All bars for ${symbol} had null values — symbol may be delisted or invalid`);
 
+			// Filter out pre/post-market bars with volume = 0 on intraday timeframes
+			// Yahoo Finance returns OTC/extended-hours bars with prices but no volume
+			const isIntraday = ['1m', '5m', '15m', '30m', '1h', '2h', '4h'].includes(timeframe);
+			if (isIntraday) {
+				const before = ohlcv.length;
+				ohlcv = ohlcv.filter(b => b.volume > 0);
+				if (before > ohlcv.length)
+					this.logger.debug(`Yahoo: filtered ${before - ohlcv.length} zero-volume bars for ${symbol} (pre/post-market)`);
+			}
+
 			// Aggregate 1h bars into 2h/4h if needed
 			if (aggregationFactor) {
 				ohlcv = this._aggregateBars(ohlcv, aggregationFactor, symbol);
