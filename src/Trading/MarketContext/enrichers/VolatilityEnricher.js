@@ -149,15 +149,17 @@ export class VolatilityEnricher {
 		const position = (currentPrice - lower) / (upper - lower);
 
 		// Get width percentile
+		// bbWidthSeries returns bandwidth as ratio (width / middle), not absolute points
 		let widthPercentile = null;
 		let bandwidthPercentile = null;
 		if (bbWidthSeries) {
 			const widthValues = bbWidthSeries.data.map(d => d.value);
-			widthPercentile = this._getPercentile(width, widthValues.slice(-STATISTICAL_PERIODS.medium));
+			const currentBandwidth = middle !== 0 ? width / middle : 0;
+			widthPercentile = this._getPercentile(currentBandwidth, widthValues.slice(-STATISTICAL_PERIODS.medium));
 
 			// Calculate bandwidth percentile for squeeze detection
 			const recentWidths = widthValues.slice(-STATISTICAL_PERIODS.short);
-			bandwidthPercentile = this._getPercentile(width, recentWidths);
+			bandwidthPercentile = this._getPercentile(currentBandwidth, recentWidths);
 		}
 
 		// Detect BB squeeze
