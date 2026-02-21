@@ -5,6 +5,8 @@
 import { asyncHandler, parseTradingParams } from './Utils/helpers.js';
 import { BinanceAdapter } from './DataProvider/BinanceAdapter.js';
 import { YahooFinanceAdapter } from './DataProvider/YahooFinanceAdapter.js';
+import { logReturns, pearsonCorrelation } from './Utils/correlationHelpers.js';
+import { round } from './Utils/statisticalHelpers.js';
 import rateLimit from 'express-rate-limit';
 
 // Helper to create rate limiters with consistent logging
@@ -358,6 +360,84 @@ export function registerRoutes(parameters) {
 			}
 
 			return await marketContextService.detectRegime({ symbol, timeframe, count, referenceDate });
+		})
+	);
+
+	// ========== Channel : API / Type : CORRELATION ==========
+
+	const CORRELATION_WINDOW = 30;
+	const CORRELATION_FETCH_BARS = CORRELATION_WINDOW + 5;
+
+	app.get(
+		'/api/v1/correlation',
+		asyncHandler(async (req) => {
+			const { symbol, timeframe, referenceDate } = parseTradingParams(req.query);
+			const { benchmark } = req.query;
+
+			logger.info(`GET /api/v1/correlation - symbol=${symbol} benchmark=${benchmark} timeframe=${timeframe}${referenceDate ? ` at ${referenceDate}` : ''}`);
+
+			if (!symbol || !benchmark) {
+				const error = new Error('symbol and benchmark are required (e.g. ?symbol=TAOUSDT&benchmark=BTCUSDT)');
+				error.statusCode = 400;
+				throw error;
+			}
+
+			// Fetch symbol OHLCV, benchmark OHLCV, and benchmark regime in parallel
+			const [symbolData, benchmarkData, benchmarkRegime] = await Promise.all([
+				dataProvider.loadOHLCV({
+					symbol, timeframe,
+					count: CORRELATION_FETCH_BARS,
+					referenceDate,
+					useCache: true,
+					detectGaps: false,
+				}),
+				dataProvider.loadOHLCV({
+					symbol: benchmark, timeframe,
+					count: CORRELATION_FETCH_BARS,
+					referenceDate,
+					useCache: true,
+					detectGaps: false,
+				}),
+				marketContextService.detectRegime({
+					symbol: benchmark, timeframe,
+					count: 200,
+					referenceDate,
+				}),
+			]);
+
+			const minBars = CORRELATION_WINDOW + 1;
+			if (symbolData.bars.length < minBars || benchmarkData.bars.length < minBars) {
+				const error = new Error(
+					`Insufficient data: need ${minBars} bars, got ${symbolData.bars.length} for ${symbol} ` +
+					`and ${benchmarkData.bars.length} for ${benchmark}`
+				);
+				error.statusCode = 422;
+				throw error;
+			}
+
+			const symbolReturns = logReturns(symbolData.bars.map(b => b.close)).slice(-CORRELATION_WINDOW);
+			const benchmarkReturns = logReturns(benchmarkData.bars.map(b => b.close)).slice(-CORRELATION_WINDOW);
+			const correlation = pearsonCorrelation(symbolReturns, benchmarkReturns);
+
+			if (correlation === null) {
+				const error = new Error('Could not compute correlation: zero variance in one of the return series');
+				error.statusCode = 422;
+				throw error;
+			}
+
+			return {
+				symbol,
+				benchmark,
+				timeframe,
+				window: CORRELATION_WINDOW,
+				correlation: round(correlation, 4),
+				benchmark_regime: benchmarkRegime,
+				metadata: {
+					symbol_bars: symbolData.bars.length,
+					benchmark_bars: benchmarkData.bars.length,
+					computed_at: new Date().toISOString(),
+				},
+			};
 		})
 	);
 
