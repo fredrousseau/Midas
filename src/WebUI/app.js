@@ -682,11 +682,28 @@ const _mainSymbolAc = attachSymbolAutocomplete(
 	() => loadData()
 );
 
+function resolveBenchmark(symbol) {
+	if (symbol.endsWith('.PA')) return '^FCHI';
+	if (symbol.endsWith('.L'))  return '^FTSE';
+	if (symbol.endsWith('.DE')) return '^GDAXI';
+	if (/^[A-Z0-9]+$/.test(symbol)) return 'BTCUSDT';
+	return '^GSPC';
+}
+
 const _webhookSymbolAc = attachSymbolAutocomplete(
 	document.getElementById('webhookSymbol'),
 	document.getElementById('webhookSymbol-suggestions'),
-	(symbol) => { document.getElementById('webhookSymbol').value = symbol; }
+	(symbol) => {
+		document.getElementById('webhookSymbol').value = symbol;
+		document.getElementById('webhookMarket').value = resolveBenchmark(symbol);
+	}
 );
+
+// Update benchmark when webhook symbol is changed manually
+document.getElementById('webhookSymbol').addEventListener('blur', () => {
+	const sym = document.getElementById('webhookSymbol').value.trim().toUpperCase();
+	if (sym) document.getElementById('webhookMarket').value = resolveBenchmark(sym);
+});
 
 function hideSymbolSuggestions() { _mainSymbolAc.hide(); }
 
@@ -799,6 +816,7 @@ else tryInitCharts();
 		}
 
 		const symbol = document.getElementById('webhookSymbol').value.trim().toUpperCase();
+		const market = document.getElementById('webhookMarket').value.trim();
 		const referenceDate = document.getElementById('webhookReferenceDate').value;
 		const long = document.getElementById('webhookLong').value;
 		const medium = document.getElementById('webhookMedium').value;
@@ -806,6 +824,7 @@ else tryInitCharts();
 
 		const params = new URLSearchParams();
 		if (symbol) params.set('symbol', symbol);
+		if (market) params.set('benchmark', market);
 		if (referenceDate) params.set('referenceDate', new Date(referenceDate).toISOString());
 		params.set('longTimeframe', long);
 		params.set('mediumTimeframe', medium);
