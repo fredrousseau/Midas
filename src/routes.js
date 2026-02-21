@@ -433,12 +433,19 @@ export function registerRoutes(parameters) {
 				throw error;
 			}
 
+			const absCorr = Math.abs(correlation);
+			const interpretation = absCorr >= 0.7 ? 'strong'
+				: absCorr >= 0.4 ? 'moderate'
+				: absCorr >= 0.2 ? 'weak'
+				: 'negligible';
+
 			return {
 				symbol,
 				benchmark,
 				timeframe,
 				window: CORRELATION_WINDOW,
 				correlation: round(correlation, 4),
+				interpretation,
 				benchmark_regime: benchmarkRegime,
 				metadata: {
 					symbol_bars: symbolData.bars.length,

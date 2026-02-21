@@ -176,15 +176,19 @@ export class VolatilityEnricher {
 
 		// Price vs bands
 		let price_vs_bands;
-		if (position > 0.8) 
+		if (position > 1.0)
+			price_vs_bands = 'above upper band (overextended — potential mean reversion)';
+		 else if (position < 0.0)
+			price_vs_bands = 'below lower band (overextended — potential mean reversion)';
+		 else if (position > 0.8)
 			price_vs_bands = 'approaching upper band (potential resistance)';
-		 else if (position < 0.2) 
+		 else if (position < 0.2)
 			price_vs_bands = 'approaching lower band (potential support)';
-		 else if (position > 0.6) 
+		 else if (position > 0.6)
 			price_vs_bands = 'upper half (bullish)';
-		 else if (position < 0.4) 
+		 else if (position < 0.4)
 			price_vs_bands = 'lower half (bearish)';
-		 else 
+		 else
 			price_vs_bands = 'middle (neutral)';
 
 		// Context
@@ -196,7 +200,7 @@ export class VolatilityEnricher {
 			upper: round(upper, 0),
 			middle: round(middle, 0),
 			lower: round(lower, 0),
-			current_position: `${position > 0.5 ? 'upper' : 'lower'} half (${round(position, 2)})`,
+			current_position: `${position > 1.0 ? 'above upper band' : position < 0.0 ? 'below lower band' : position > 0.5 ? 'upper half' : 'lower half'} (${round(position, 2)})`,
 			width: round(width, 0),
 			width_percentile: widthPercentile ? round(widthPercentile, 2) : null,
 			interpretation,
