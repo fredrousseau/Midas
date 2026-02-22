@@ -436,7 +436,7 @@ function addOverlayIndicator(name, seriesDataArray) {
 		const lineSeries = mainChart.addLineSeries({
 			color: color,
 			lineWidth: 2,
-			title: displayName,
+			title: '',
 		});
 
 		lineSeries.setData(seriesData.data);
@@ -470,7 +470,7 @@ function addOscillatorIndicator(name, seriesDataArray) {
 			const lineSeries = indicatorChart.addLineSeries({
 				color: color,
 				lineWidth: 2,
-				title: displayName,
+				title: '',
 			});
 
 			lineSeries.setData(seriesData.data);

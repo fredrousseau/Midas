@@ -314,12 +314,14 @@ function addToSelectedIndicators(indicatorName) {
 	item.appendChild(controls);
 
 	list.appendChild(item);
+	updateIndicatorLegend();
 }
 
 function removeFromSelectedIndicators(indicatorName) {
 	const item = document.getElementById(`selected-${indicatorName}`);
 	if (item) item.remove();
 	indicatorSettings.delete(indicatorName);
+	updateIndicatorLegend();
 }
 
 function toggleSelectedIndicatorVisibility(indicatorName, btn) {
@@ -382,6 +384,7 @@ function showSelectedColorPicker(indicatorName, colorBox) {
 				});
 
 			document.body.removeChild(picker);
+			updateIndicatorLegend();
 		});
 
 		picker.appendChild(option);
@@ -397,4 +400,26 @@ function showSelectedColorPicker(indicatorName, colorBox) {
 
 	setTimeout(() => document.addEventListener('click', closeHandler), 0);
 	document.body.appendChild(picker);
+}
+
+function updateIndicatorLegend() {
+	const legend = document.getElementById('indicatorLegend');
+	if (!legend) return;
+	legend.innerHTML = '';
+
+	for (const [name, settings] of indicatorSettings) {
+		const item = document.createElement('span');
+		item.className = 'legend-item';
+
+		const swatch = document.createElement('span');
+		swatch.className = 'legend-color';
+		swatch.style.backgroundColor = settings.color;
+
+		const label = document.createElement('span');
+		label.textContent = indicatorDescriptions.get(name) || name.toUpperCase();
+
+		item.appendChild(swatch);
+		item.appendChild(label);
+		legend.appendChild(item);
+	}
 }

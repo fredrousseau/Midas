@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
 	const tableBody = document.getElementById('cacheTableBody');
 	const statsSummary = document.getElementById('cacheStatsSummary');
 	const statusEl = document.getElementById('cacheStatus');
+	const heatmapGrid = document.getElementById('cacheHeatmapGrid');
 
 	function showStatus(message, type = 'info') {
 		statusEl.textContent = message;
@@ -108,6 +109,101 @@ document.addEventListener('DOMContentLoaded', () => {
 		});
 	}
 
+	// Timeframe ordering for heatmap columns
+	const TF_ORDER = ['1m', '5m', '15m', '30m', '1h', '2h', '4h', '1d', '1w', '1M'];
+
+	function getHeatmapColor(count, maxCount) {
+		if (!count) return null; // empty cell
+		const ratio = Math.min(count / maxCount, 1);
+		// Blue (few bars) → Cyan → Yellow → Orange (many bars)
+		if (ratio < 0.33) {
+			const t = ratio / 0.33;
+			const r = Math.round(20 + t * 0);
+			const g = Math.round(60 + t * 140);
+			const b = Math.round(180 - t * 30);
+			return `rgb(${r}, ${g}, ${b})`;
+		} else if (ratio < 0.66) {
+			const t = (ratio - 0.33) / 0.33;
+			const r = Math.round(20 + t * 210);
+			const g = Math.round(200 - t * 20);
+			const b = Math.round(150 - t * 120);
+			return `rgb(${r}, ${g}, ${b})`;
+		} else {
+			const t = (ratio - 0.66) / 0.34;
+			const r = Math.round(230 + t * 25);
+			const g = Math.round(180 - t * 100);
+			const b = Math.round(30 - t * 20);
+			return `rgb(${r}, ${g}, ${b})`;
+		}
+	}
+
+	function renderHeatmap(entries) {
+		if (!entries || entries.length === 0) {
+			heatmapGrid.innerHTML = '<div class="heatmap-no-data">Aucune entree en cache</div>';
+			return;
+		}
+
+		// Build lookup: { symbol: { timeframe: entry } }
+		const lookup = {};
+		const symbolSet = new Set();
+		const tfSet = new Set();
+		let maxCount = 0;
+
+		for (const entry of entries) {
+			const { symbol, timeframe } = parseKey(entry.key);
+			symbolSet.add(symbol);
+			tfSet.add(timeframe);
+			if (!lookup[symbol]) lookup[symbol] = {};
+			lookup[symbol][timeframe] = entry;
+			if (entry.count > maxCount) maxCount = entry.count;
+		}
+
+		// Sort symbols alphabetically, timeframes by duration
+		const symbols = [...symbolSet].sort();
+		const timeframes = [...tfSet].sort((a, b) => {
+			const ia = TF_ORDER.indexOf(a);
+			const ib = TF_ORDER.indexOf(b);
+			return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+		});
+
+		heatmapGrid.className = 'heatmap-grid';
+		heatmapGrid.style.gridTemplateColumns = `auto repeat(${timeframes.length}, 1fr)`;
+
+		let html = '';
+
+		// Header row: empty corner + timeframe labels
+		html += '<div class="heatmap-header"></div>';
+		for (const tf of timeframes)
+			html += `<div class="heatmap-header">${tf}</div>`;
+
+		// Data rows
+		for (const sym of symbols) {
+			html += `<div class="heatmap-row-label">${sym}</div>`;
+			for (const tf of timeframes) {
+				const entry = lookup[sym]?.[tf];
+				if (entry) {
+					const color = getHeatmapColor(entry.count, maxCount);
+					const textColor = entry.count / maxCount > 0.5 ? 'rgba(0,0,0,0.7)' : 'rgba(255,255,255,0.8)';
+					html += `<div class="heatmap-cell" style="background:${color};color:${textColor}">
+						${entry.count.toLocaleString('fr-FR')}
+						<div class="heatmap-tooltip">
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">Symbol</span><span>${sym}:${tf}</span></div>
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">Barres</span><span>${entry.count.toLocaleString('fr-FR')}</span></div>
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">Age</span><span>${formatAge(entry.age)}</span></div>
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">TTL</span><span>${formatTTL(entry.ttlRemaining)}</span></div>
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">Debut</span><span>${formatDate(entry.start)}</span></div>
+							<div class="heatmap-tooltip-row"><span class="heatmap-tooltip-label">Fin</span><span>${formatDate(entry.end)}</span></div>
+						</div>
+					</div>`;
+				} else {
+					html += '<div class="heatmap-cell heatmap-empty">-</div>';
+				}
+			}
+		}
+
+		heatmapGrid.innerHTML = html;
+	}
+
 	async function fetchCacheStats() {
 		try {
 			const response = await fetch('/api/v1/cache/stats');
@@ -120,6 +216,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 			const cache = result.data.cache;
 			renderStats(cache);
+			renderHeatmap(cache.entries);
 			renderTable(cache.entries);
 		} catch (error) {
 			showStatus(`Erreur: ${error.message}`, 'error');

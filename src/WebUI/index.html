@@ -196,6 +196,28 @@
 			font-weight: 600;
 		}
 
+		.indicator-legend {
+			display: flex;
+			flex-wrap: wrap;
+			gap: 6px 12px;
+			margin-top: 8px;
+			font-size: 11px;
+		}
+
+		.legend-item {
+			display: flex;
+			align-items: center;
+			gap: 4px;
+			color: var(--text-secondary);
+		}
+
+		.legend-color {
+			width: 10px;
+			height: 10px;
+			border-radius: 2px;
+			flex-shrink: 0;
+		}
+
 		.clear-all-btn {
 			padding: 6px 12px;
 			font-size: 11px;
@@ -1096,6 +1118,113 @@
 		.btn-delete-entry:hover {
 			background: var(--negative-subtle);
 		}
+
+		/* ── Cache Heatmap ────────────────────────────────────────── */
+		.cache-heatmap {
+			margin: 16px;
+			padding: 16px;
+			background: var(--bg-secondary);
+			border: 1px solid var(--border-default);
+			border-radius: var(--radius-lg);
+		}
+
+		.cache-heatmap-title {
+			font-size: 11px;
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			color: var(--text-secondary);
+			font-weight: 500;
+			margin-bottom: 12px;
+		}
+
+		.heatmap-grid {
+			display: grid;
+			gap: 3px;
+		}
+
+		.heatmap-header {
+			font-size: 10px;
+			color: var(--text-secondary);
+			text-transform: uppercase;
+			text-align: center;
+			padding: 4px 2px;
+			font-weight: 600;
+		}
+
+		.heatmap-row-label {
+			font-size: 11px;
+			color: var(--text-primary);
+			font-family: var(--font-mono);
+			display: flex;
+			align-items: center;
+			padding-right: 8px;
+			white-space: nowrap;
+			overflow: hidden;
+			text-overflow: ellipsis;
+		}
+
+		.heatmap-cell {
+			position: relative;
+			border-radius: 3px;
+			min-height: 32px;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 10px;
+			font-family: var(--font-mono);
+			color: var(--text-secondary);
+			cursor: default;
+			transition: transform 0.15s ease, box-shadow 0.15s ease;
+		}
+
+		.heatmap-cell:not(.heatmap-empty):hover {
+			transform: scale(1.08);
+			box-shadow: 0 0 8px rgba(41, 98, 255, 0.3);
+			z-index: 1;
+		}
+
+		.heatmap-empty {
+			background: var(--bg-tertiary);
+		}
+
+		.heatmap-cell .heatmap-tooltip {
+			display: none;
+			position: absolute;
+			bottom: calc(100% + 6px);
+			left: 50%;
+			transform: translateX(-50%);
+			background: var(--bg-elevated);
+			border: 1px solid var(--border-strong);
+			border-radius: var(--radius-md);
+			padding: 8px 10px;
+			font-size: 11px;
+			color: var(--text-primary);
+			white-space: nowrap;
+			z-index: 10;
+			pointer-events: none;
+			box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+		}
+
+		.heatmap-cell:hover .heatmap-tooltip {
+			display: block;
+		}
+
+		.heatmap-tooltip-row {
+			display: flex;
+			justify-content: space-between;
+			gap: 12px;
+		}
+
+		.heatmap-tooltip-label {
+			color: var(--text-secondary);
+		}
+
+		.heatmap-no-data {
+			text-align: center;
+			padding: 20px;
+			color: var(--text-muted);
+			font-size: 12px;
+		}
 	</style>
 </head>
 <body>
@@ -1126,6 +1255,7 @@
 						<span class="stat-value" id="totalCount">-</span>
 					</div>
 				</div>
+				<div id="indicatorLegend" class="indicator-legend"></div>
 				<button class="btn-ghost btn-ghost-danger clear-all-btn hidden" id="clearAllBtn">Tout désélectionner</button>
 			</div>
 
@@ -1301,6 +1431,11 @@
 						<label>&nbsp;</label>
 						<button id="cacheClearAllBtn" class="btn-danger">Vider tout le cache</button>
 					</div>
+				</div>
+
+				<div class="cache-heatmap" id="cacheHeatmap">
+					<div class="cache-heatmap-title">Couverture du cache</div>
+					<div id="cacheHeatmapGrid"></div>
 				</div>
 
 				<div class="cache-table-container">
