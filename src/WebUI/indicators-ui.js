@@ -11,16 +11,6 @@ async function buildIndicatorUI() {
 		const indicatorListEl = document.getElementById('indicatorList');
 		indicatorListEl.innerHTML = '';
 
-		const categoryNames = {
-			movingAverages: 'Moyennes Mobiles',
-			momentum: 'Momentum',
-			volatility: 'Volatilité',
-			trend: 'Tendance',
-			volume: 'Volume',
-			supportResistance: 'Support/Résistance',
-			advanced: 'Avancé',
-		};
-
 		let totalIndicators = 0;
 		for (const [_category, data] of Object.entries(catalog))
 			if (data.indicators && Array.isArray(data.indicators))
@@ -39,7 +29,7 @@ async function buildIndicatorUI() {
 
 			const categoryName = document.createElement('span');
 			categoryName.className = 'category-name';
-			categoryName.textContent = `${categoryNames[category] || category} (${data.indicators.length})`;
+			categoryName.textContent = `${CATEGORY_NAMES[category] || category} (${data.indicators.length})`;
 
 			const arrow = document.createElement('span');
 			arrow.className = 'category-arrow';
@@ -254,6 +244,19 @@ function setupIndicatorSearch() {
 
 const indicatorSettings = new Map();
 
+const CATEGORY_NAMES = {
+	movingAverages: 'Moyennes Mobiles',
+	momentum: 'Momentum',
+	volatility: 'Volatilité',
+	trend: 'Tendance',
+	volume: 'Volume',
+	supportResistance: 'Support/Résistance',
+	advanced: 'Avancé',
+};
+
+// Order for category groups in the selected list
+const CATEGORY_ORDER = ['movingAverages', 'momentum', 'volatility', 'trend', 'volume', 'supportResistance', 'advanced'];
+
 function updateSelectedIndicatorsVisibility() {
 	const section = document.getElementById('selectedIndicatorsSection');
 	const selectedCount = document.querySelectorAll('#indicatorList input[type="checkbox"]:checked').length;
@@ -264,8 +267,43 @@ function updateSelectedIndicatorsVisibility() {
 		section.classList.add('hidden');
 }
 
-function addToSelectedIndicators(indicatorName) {
+function getOrCreateCategoryGroup(category) {
 	const list = document.getElementById('selectedIndicatorsList');
+	const groupId = `selected-group-${category}`;
+	let group = document.getElementById(groupId);
+
+	if (!group) {
+		group = document.createElement('div');
+		group.className = 'selected-category-group';
+		group.id = groupId;
+		group.dataset.category = category;
+
+		const label = document.createElement('div');
+		label.className = 'selected-category-label';
+		label.textContent = CATEGORY_NAMES[category] || category;
+		group.appendChild(label);
+
+		// Insert in correct order
+		const existingGroups = list.querySelectorAll('.selected-category-group');
+		const targetIndex = CATEGORY_ORDER.indexOf(category);
+		let inserted = false;
+		for (const existing of existingGroups) {
+			const existingIndex = CATEGORY_ORDER.indexOf(existing.dataset.category);
+			if (existingIndex > targetIndex) {
+				list.insertBefore(group, existing);
+				inserted = true;
+				break;
+			}
+		}
+		if (!inserted) list.appendChild(group);
+	}
+
+	return group;
+}
+
+function addToSelectedIndicators(indicatorName) {
+	const checkbox = document.getElementById(`ind-${indicatorName}`);
+	const category = checkbox?.dataset.category || 'advanced';
 
 	let initialColor = '#2196F3';
 	const firstSeriesKey = Array.from(indicatorSeries.keys()).find(key => key.startsWith(indicatorName));
@@ -275,7 +313,7 @@ function addToSelectedIndicators(indicatorName) {
 			initialColor = series.options().color;
 	}
 
-	indicatorSettings.set(indicatorName, { visible: true, color: initialColor });
+	indicatorSettings.set(indicatorName, { visible: true, color: initialColor, category });
 
 	const item = document.createElement('div');
 	item.className = 'selected-indicator-item';
@@ -313,13 +351,20 @@ function addToSelectedIndicators(indicatorName) {
 	item.appendChild(name);
 	item.appendChild(controls);
 
-	list.appendChild(item);
+	const group = getOrCreateCategoryGroup(category);
+	group.appendChild(item);
 	updateIndicatorLegend();
 }
 
 function removeFromSelectedIndicators(indicatorName) {
 	const item = document.getElementById(`selected-${indicatorName}`);
-	if (item) item.remove();
+	if (item) {
+		const group = item.parentElement;
+		item.remove();
+		// Remove empty category group (only label child remains)
+		if (group?.classList.contains('selected-category-group') && group.querySelectorAll('.selected-indicator-item').length === 0)
+			group.remove();
+	}
 	indicatorSettings.delete(indicatorName);
 	updateIndicatorLegend();
 }
